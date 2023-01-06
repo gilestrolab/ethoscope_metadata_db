@@ -29,7 +29,11 @@ import json
 import bottle
 
 from ast import literal_eval
-from ethoscopy.metadata_db import db_organiser, metadata_handler, metadata_crawler
+
+try:
+    from ethoscopy.metadata_db import db_organiser, metadata_handler, metadata_crawler
+except:
+    from metadata_db import db_organiser, metadata_handler, metadata_crawler
 
 app = bottle.Bottle()
 STATIC_DIR = "./static"
