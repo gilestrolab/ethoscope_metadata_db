@@ -336,8 +336,8 @@ class metadata_handler():
 class metadata_crawler():
 
         
-    def __init__(self):
-        self.db_folder = os.path.join (DB_FOLDER, 'db')
+    def __init__(self, path=DB_FOLDER):
+        self.db_folder = os.path.join (path, 'db')
         self.upload_folder = os.path.join(self.db_folder, 'unnamed')
 
         self.refresh_all_info()

@@ -144,8 +144,8 @@ def close(exit_status=0):
 if __name__ == '__main__':
     logging.getLogger().setLevel(logging.INFO)
     parser = optparse.OptionParser()
-    parser.add_option("-d", "--db_path", dest="db_path", default="/mnt/ethoscope_results", help="Path to the root of the ethoscope db files")
-    parser.add_option("-f", "--db_file", dest="db_file", default="/opt/ethoscope_db", help="Path to the saved db file")
+    parser.add_option("-d", "--db", dest="db_path", default="/mnt/ethoscope_results", help="Path to the root of the ethoscope db files")
+    parser.add_option("-f", "--metadata", dest="md_path", default="/opt/ethoscope_metadata", help="Path to the root of the metadata files")
     parser.add_option("-r", "--refresh", dest="refresh_db", default=False, help="Refresh ethoscope database on start", action="store_true")
 
     parser.add_option("-D", "--debug", dest="debug", default=False, help="Set DEBUG mode ON", action="store_true")
@@ -155,7 +155,7 @@ if __name__ == '__main__':
 
     option_dict = vars(options)
     DB_PATH = option_dict["db_path"]
-    DB_FILE = option_dict["db_file"]
+    MD_PATH = option_dict["md_path"]
     REFRESH_DB = option_dict["refresh_db"]
 
     PORT = option_dict["port"]
@@ -166,9 +166,11 @@ if __name__ == '__main__':
         logging.getLogger().setLevel(logging.DEBUG)
         logging.info("Logging using DEBUG SETTINGS")
 
+    #DB_PATH points to the SQLlite db files. It can (should) be mounted as readonly as this never writes there
+    #MD_PATH points to the metadata files. This will also contain the csv file with a summary of the SQLite dbs. Must be writable.
 
-    etho_db = db_organiser(DB_PATH, refresh=REFRESH_DB)
-    meta_db = metadata_crawler()
+    etho_db = db_organiser(DB_PATH, refresh=REFRESH_DB, csv_path=MD_PATH)
+    meta_db = metadata_crawler(path=MD_PATH)
 
     try:
         app.run(host='0.0.0.0', port=PORT, debug=DEBUG)
