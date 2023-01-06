@@ -145,7 +145,7 @@ if __name__ == '__main__':
     logging.getLogger().setLevel(logging.INFO)
     parser = optparse.OptionParser()
     parser.add_option("-d", "--db", dest="db_path", default="/mnt/ethoscope_results", help="Path to the root of the ethoscope db files")
-    parser.add_option("-f", "--metadata", dest="md_path", default="/opt/ethoscope_metadata", help="Path to the root of the metadata files")
+    parser.add_option("-m", "--metadata", dest="md_path", default="/opt/ethoscope_metadata", help="Path to the root of the metadata files")
     parser.add_option("-r", "--refresh", dest="refresh_db", default=False, help="Refresh ethoscope database on start", action="store_true")
 
     parser.add_option("-D", "--debug", dest="debug", default=False, help="Set DEBUG mode ON", action="store_true")
