@@ -119,6 +119,7 @@ def refresh():
     md = metadata_handler ( filename )
     md.associate_to_db(etho_db)
     md.save()
+    meta_db.refresh_all_info()
     return {'success' : True, 'message' : 'Metadata succefully associated.' }
 
 
@@ -168,6 +169,12 @@ if __name__ == '__main__':
 
     #DB_PATH points to the SQLlite db files. It can (should) be mounted as readonly as this never writes there
     #MD_PATH points to the metadata files. This will also contain the csv file with a summary of the SQLite dbs. Must be writable.
+
+    
+    try:
+        os.makedirs(os.path.join (MD_PATH, "db/unnamed"))
+    except FileExistsError:
+        logging.info("The folder structure is correct.")
 
     etho_db = db_organiser(DB_PATH, refresh=REFRESH_DB, csv_path=MD_PATH)
     meta_db = metadata_crawler(path=MD_PATH)
