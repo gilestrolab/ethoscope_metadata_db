@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Ethoscope metadata and DB explorer</title>
+        <link rel="shortcut icon" href="/static/favicon.ico">
+
+        <link rel="stylesheet" type="text/css" href="/static/css/normalize.min.css">
+        <link rel="stylesheet" type="text/css" href="/static/css/materialize.css">
+        <link rel="stylesheet" type="text/css" href="/static/css/material-icons.css">
+        <link rel="stylesheet" type="text/css" href="/static/css/fontawesome-all.min.css">
+        <link rel="stylesheet" type="text/css" href="/static/css/dropzone.css">
+        <link rel="stylesheet" type="text/css" href="/static/css/style.css">
+
+        <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/webfonts/fa-solid-900.woff2">
+
+    </head>
+    <body>
+        <!-- partial:index.partial.html -->
+        <div class="navbar-fixed ">
+            <nav>
+                <div class="nav-wrapper blue ">
+
+                    <div class="row mb-0">
+                        <div class="col s12 m8 offset-m2">
+                            <h3>Ethoscope metadata and DB explorer</h3>
+                        </div>
+                    </div>
+                    <div class="row mb-0">
+                        <div class='col s12 m6   l4 offset-l2'>
+
+
+                            <ul class="tabs blue">
+                                <li class="tab col">
+                                    <a href="#tab1" class='active white-text'>Add</a>
+                                </li>
+                                <li class="tab col">
+                                    <a href="#tab2" class='white-text'>Browse</a>
+                                </li>
+                                <li class="tab col">
+                                    <a href="#tab3" class='white-text'>Search</a>
+                                </li>
+                            </ul>
+
+                        </div>
+                    </div>
+
+                </div>
+            </nav>
+        </div>
+
+        <div class="container pt-10">
+            <div class="row card">
+                <div id="tab1" class="col s12">
+                    <h4 class='header'>Upload new metadata</h4>
+
+                    <div class="row">
+                        <form id="metadata_form" class="col s12">
+
+                            <div id="dropzone_element" class="dropzone">
+                                Drop metadata file here to upload
+                            </div>
+
+                            <div class="alert card lighten-4 text-darken-4 red red-text" id="upload_result_element" hidden>
+                                <div class="card-content" id="upload_result_message">
+                                    <p><i class="material-icons" id="upload-banner-icon">report</i>
+                                        <span">Success status:</span> Message</p></div>
+                                </div>
+                                </div>
+
+
+                            <div class="row"></div>
+
+                            <div class="row">
+                                <div class="input-field col s6">
+                                    <input id="project-input" type="text" class="validate" name="project">
+                                    <label for="project-input">Project name</label>
+                                </div>
+                                
+                                <div class="input-field col s6">
+                                    <input id="doi-input" placeholder="https://doi.org/" type="text" class="validate" name="doi">
+                                    <label for="input-field">DOI</label>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="input-field col s6">
+                                    <input type="text" id="authors-input">
+                                    <label for="author-input">Authors</label>
+                                </div>
+                                <div class="col s2">
+                                    <a id="add_authors_BTN" class="waves-effect waves-light btn">
+                                        <i class="material-icons">add</i>
+                                    </a>
+                                </div>
+                            </div>
+                            <div id="authors_list" class="capitalize" style="border-bottom: none!important;"></div>
+
+                            <div class="row">
+                                <div class="input-field col s6">
+                                    <input type="text" id="tags-input">
+                                    <label for="tags-input">Tags</label>
+                                </div>
+                                <div class="col s2">
+                                    <a id="add_tags_BTN" class="waves-effect waves-light btn">
+                                        <i class="material-icons">add</i>
+                                    </a>
+                                </div>
+                            </div>
+                            <div id="tags_list" name="tags" style="border-bottom: none!important;"></div>
+
+                            <div class="row">
+                                <div class="input-field col s12">
+                                    <textarea id="description-input" class="materialize-textarea" style="height: 200px;"></textarea>
+                                    <label for="description-input">Description</label>
+                                </div>
+                            </div>
+
+
+                            <div class="row">
+                                <div class="col s1">
+                                <a id="save_BTN" class="waves-effect waves-light btn">
+                                <i class="material-icons">save</i>
+                            </a>
+                            </div>
+                            </div>
+                        </form>
+                    </div>
+
+
+                </div>
+                </div>
+
+
+                <div class="container">
+                <div class="row card">
+                <div id="tab2" class="col s12">
+
+
+                    <h4 class='header'>Browse</h4>
+
+                    <div class="row col s12">
+                        <div class="input-field col s6">
+                            <select id="project-select" class="materialize-select">
+                                <option disabled selected value> -- select a project -- </option>
+                            </select>
+                            <label for="project-select">Project</label>
+
+                        </div>
+                    </div>
+
+                    <div class="row col s12">
+                        <ul class="collection col s6" id="project-list">
+                        </ul>
+                    </div>
+
+
+                    <div class="row col s12" id="browser-table" style="display: none;">
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <td>Belongs to project:</td>
+                                    <td  id="browser_project"></td>
+                                    <td>
+                                        <a href="" id="browser_doi" class="fa-solid fa-scroll fa-2xl" style="display:none; padding-right: 0.5em;" title="Link to the provided DOI"></a>
+                                        <a href="" id="browser_download_link" class="fa fa-download fa-2xl" aria-hidden="true" style="padding-right: 0.5em;" title="Download metadata file."></a>
+                                        <a href="#" id="browser_refresh" class="fa fa-refresh fa-2xl" aria-hidden="true" style="padding-right: 0.5em;" title="Refresh association to the database files."></a>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Authors:</td>
+                                    <td id="browser_authors" colspan="2"></td>
+                                </tr>
+                                <tr>
+                                    <td>Tags:</td>
+                                    <td id="browser_tags" colspan="2"></td>
+                                </tr>
+                                <tr>
+                                    <td id="browser_description" colspan="3"></td>
+                                </tr>
+
+                                <tr bgcolor = "lightgrey">
+                                    <td>Total</td>
+                                    <td>Not found</td>
+                                    <td>Corresponding file size</td>
+                                </tr>
+                                <tr>
+                                    <td id="browser_entries_total"></td>
+                                    <td id="browser_entries_not_found"></td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td id="browser_db_total"></td>
+                                    <td id="browser_db_not_found"></td>
+                                    <td id="browser_db_size"></td>
+                                </tr>
+
+                            </tbody>
+                        </table>
+                    </div>
+
+                </div>
+                </div>
+            </div>
+
+                <div class="container">
+                    <div class="row card">
+        
+                    <div id="tab3" class="col s12">
+                        <h4 class='header'>Search</h4>
+                    </div>
+                    </div>
+                    </div>
+
+            </div>
+        </div>
+        
+        <!-- Refresh Modal Structure -->
+        <div id="refresh_modal" class="modal">
+            <div class="modal-content">
+                <div class="progress" id="modal_progress_bar">
+                    <div class="indeterminate"></div>
+                </div>
+                <p id="modal_text">Text</p>
+            </div>
+            <div class="modal-footer">
+                <a href="#!" class="modal-close waves-effect waves-green btn-flat disabled" id="modal_btn">Done</a>
+            </div>
+        </div>      
+        
+        <!-- partial -->
+        <script src="/static/js/jquery.min.js"></script>
+        <script src="/static/js/materialize.min.js"></script>
+        <script src="/static/js/script.js"></script>
+    </body>
+</html>
