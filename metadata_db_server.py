@@ -146,6 +146,7 @@ if __name__ == '__main__':
     parser = optparse.OptionParser()
     parser.add_option("-d", "--db_path", dest="db_path", default="/mnt/ethoscope_results", help="Path to the root of the ethoscope db files")
     parser.add_option("-f", "--db_file", dest="db_file", default="/opt/ethoscope_db", help="Path to the saved db file")
+    parser.add_option("-r", "--refresh", dest="refresh_db", default=False, help="Refresh ethoscope database on start", action="store_true")
 
     parser.add_option("-D", "--debug", dest="debug", default=False, help="Set DEBUG mode ON", action="store_true")
     parser.add_option("-p", "--port", dest="port", default=8081, help="port")
@@ -155,6 +156,7 @@ if __name__ == '__main__':
     option_dict = vars(options)
     DB_PATH = option_dict["db_path"]
     DB_FILE = option_dict["db_file"]
+    REFRESH_DB = option_dict["refresh_db"]
 
     PORT = option_dict["port"]
     DEBUG = option_dict["debug"]
@@ -165,7 +167,7 @@ if __name__ == '__main__':
         logging.info("Logging using DEBUG SETTINGS")
 
 
-    etho_db = db_organiser(DB_PATH, refresh=False)
+    etho_db = db_organiser(DB_PATH, refresh=REFRESH_DB)
     meta_db = metadata_crawler()
 
     try:
