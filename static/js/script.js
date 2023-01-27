@@ -104,7 +104,7 @@ function refresh_info () {
         $('#project-list').html('');
         let prj_name = $("#project-select").val();
         $.each(data[prj_name], function (filename, identifier) {
-            $('#project-list').append($('<a href="#" class="collection-item" onclick="update_browser(\''+identifier+'\');return false;" style="display:inline-block">'+filename+'</a><a class="fa fa-trash" style="color:grey;float:right;margin-top:15px;" onclick="delete_metadata(\''+identifier+'\');"></a>'));
+            $('#project-list').append($('<li><a href="#" class="collection-item metadata_name" onclick="update_browser(\''+identifier+'\');return false;" style="display:inline-block">'+filename+'</a><a class="fa fa-trash" style="color:grey;float:right;margin-top:15px;" onclick="delete_metadata(\''+identifier+'\');"></a></li>'));
           })
     })
 }

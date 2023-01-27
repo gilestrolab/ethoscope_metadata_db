@@ -30,3 +30,8 @@ CMD ["python", "/opt/ethoscope_metadata_server/metadata_db_server.py", "--refres
 #       -e LETSENCRYPT_HOST="metadata.lab.gilest.ro" \
 #       -e LETSENCRYPT_EMAIL="giorgio@gilest.ro" \
 #       ethoscope_metadata_server-lab.gilest.ro
+
+
+# Update git repo without regenerating the Docker:
+# sudo docker exec ethoscope-metadata-server bash -c 'cd /opt/ethoscope_metadata_server && git pull' 
+# sudo docker restart ethoscope-metadata-server
