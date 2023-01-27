@@ -4,12 +4,6 @@
 
 $(".button-collapse").sideNav();
 
-//currently added authors and tags
-/* var current = {
-        authors_list : [{ tag: 'Giorgio Gilestro', }, { tag: 'Hannah Jones', }],
-        tags_list : [{ tag: 'uno', }, { tag: 'due', }]
-    }; */
-
 var current = {
     authors_list : [],
     tags_list : []
@@ -104,9 +98,17 @@ function refresh_info () {
         $('#project-list').html('');
         let prj_name = $("#project-select").val();
         $.each(data[prj_name], function (filename, identifier) {
-            $('#project-list').append($('<li><a href="#" class="collection-item metadata_name" onclick="update_browser(\''+identifier+'\');return false;" style="display:inline-block">'+filename+'</a><a class="fa fa-trash" style="color:grey;float:right;margin-top:15px;" onclick="delete_metadata(\''+identifier+'\');"></a></li>'));
+            $('#project-list').append($('\
+                                <li><a href="#" class="collection-item metadata_name" onclick="update_browser(\''+identifier+'\');return false;" style="display:inline-block">'+filename+'</a>\
+                                <a class="fa fa-trash" title="Delete metadata" style="color:sky;float:right;margin-top:15px;" onclick="delete_metadata(\''+identifier+'\');"></a>\
+                                <a class="fa fa-edit disabled"  title="Edit metadata - not yet implemented" style="color:lightgrey;float:right;margin-top:15px;margin-right:20px;" onclick="edit_metadata(\''+identifier+'\');"></a>\
+                                </li>'));
           })
     })
+}
+
+function edit_metadata(identifier) {
+    //location.reload();
 }
 
 function delete_metadata(identifier) {
