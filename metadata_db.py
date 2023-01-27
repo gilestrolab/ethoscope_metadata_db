@@ -434,6 +434,26 @@ class metadata_crawler():
                 return self.all_info[identifier]
             except:
                 return {}
+
+    def remove (self, identifier):
+        '''
+        Phisically delete the metadata file and its descriptor
+        '''
+        info = self.request(identifier)
+
+        metadata_file = info['filename']
+        info_file = metadata_file + '.info'
+        
+        try:
+            os.remove(metadata_file)
+            os.remove(info_file)
+
+            self.refresh_all_info()
+            return True
+            
+        except:
+            return False
+
         
     def find(self, criteria):
         '''

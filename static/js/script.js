@@ -104,9 +104,32 @@ function refresh_info () {
         $('#project-list').html('');
         let prj_name = $("#project-select").val();
         $.each(data[prj_name], function (filename, identifier) {
-            $('#project-list').append($('<a href="#" class="collection-item" onclick="update_browser(\''+identifier+'\');return false;"></a>').text(filename));
+            $('#project-list').append($('<a href="#" class="collection-item" onclick="update_browser(\''+identifier+'\');return false;" style="display:inline-block">'+filename+'</a><a class="fa fa-trash" style="color:grey;float:right;margin-top:15px;" onclick="delete_metadata(\''+identifier+'\');"></a>'));
           })
     })
+}
+
+function delete_metadata(identifier) {
+
+    $('#delete_modal').show();
+    $('#delete_modal').focus();
+
+    $('#modal_delete_cancel_btn').click(function(){ 
+        $('#delete_modal').hide();
+    });
+
+    $('#modal_delete_confirm_btn').click(function(){ 
+        $.ajax({
+            url: '/delete',
+            timeout: 60 * 1000,
+            data : {'id' : identifier},
+            type: 'GET'
+        }).success( function( data ){
+            $('#modal_delete_text').html(data.message);
+            $('#modal_delete_confirm_btn').addClass("disabled");
+            $('#modal_delete_cancel_btn').text("OK");
+        });
+});
 }
 
 // INITIALIZATION OF AUTOCOMPLETE LIST

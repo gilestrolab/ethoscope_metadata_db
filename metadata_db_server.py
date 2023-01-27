@@ -89,13 +89,31 @@ def save():
         return {'success' : False, 'message' : str(e)}
 
 
+@app.route('/delete', method='GET')
+def delete_metadata_file():
+    hash_id = bottle.request.query.get('id', '')
+
+    if hash_id:
+        fullpath = meta_db.request(hash_id)['filename']
+
+        try:
+            meta_db.remove(hash_id)
+            return {'success' : True, 'message' : 'Metadata file successfully deleted.'}
+
+        except Exception as e:
+            return {'success' : False, 'message' : str(e)}
+    else:
+        return {'success' : False, 'message' : 'A valid identifier must be provided'}
+
+
 @app.route('/download', method='GET')
 def download():
     hash_id = bottle.request.query.get('id', '')
-    dwn_type = bottle.request.query.get('type', '')
     fullpath = meta_db.request(hash_id)['filename']
     path, filename = os.path.split( fullpath )
-    
+
+    dwn_type = bottle.request.query.get('type', '')
+
     if dwn_type == 'metadata':
         return bottle.static_file (filename, root=path,  download=filename)
 

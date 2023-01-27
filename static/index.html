@@ -150,7 +150,7 @@
                     </div>
 
                     <div class="row col s12">
-                        <ul class="collection col s6" id="project-list">
+                        <ul class="collection col s6" id="project-list" style="border:0px;">
                         </ul>
                     </div>
 
@@ -227,7 +227,19 @@
                 <a href="#!" class="modal-close waves-effect waves-green btn-flat disabled" id="modal_btn">Done</a>
             </div>
         </div>      
-        
+
+        <!-- Refresh Modal Structure -->
+        <div id="delete_modal" class="modal">
+            <div class="modal-content">
+                <p id="modal_delete_text">Are you sure you want to delete this metadata file? This cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <a href="#!" class="modal-close waves-effect waves-green btn-flat" id="modal_delete_confirm_btn">Delete</a>
+                <a href="#!" class="modal-close waves-effect waves-green btn-flat" id="modal_delete_cancel_btn">Cancel</a>
+
+            </div>
+        </div>      
+
         <!-- partial -->
         <script src="/static/js/jquery.min.js"></script>
         <script src="/static/js/materialize.min.js"></script>
