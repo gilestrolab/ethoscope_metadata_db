@@ -9,7 +9,7 @@ The core of the package is ethoscope_metadata_db which takes care of
  A typical use case is to recover all the ethoscope dbs associated to a certain metadata file so that the user can collate them and upload them to a public dataset repository, such as Zenodo.
 
 For instance:
-''''
+```
 from ethoscope_metadata_db import db_organiser, metadata_handler
 
 metadata_filename = 'all_metadata.csv'
@@ -34,7 +34,19 @@ meta.export('Joyce_2024_only_dbs.txt')
 
 #Saves all the info for our convenience
 meta.export('Joyce_2024_only_dbs.txt', verbose=True)
-''''
+```
 
-The other class is the metadata_db_server which runs a web based UI
-Instructions on to set it up and run it can be found here: https://www.notion.so/giorgiogilestro/The-Metadata-Database-Server-cafac3d16ca04c0b8d4364e7624d7151
+The second class is the **metadata_db_server** which runs a web based UI
+Instructions on to set it up and run it can be found [here](https://www.notion.so/giorgiogilestro/The-Metadata-Database-Server-cafac3d16ca04c0b8d4364e7624d7151).
+
+## Installation
+Install with pip
+
+```
+#optional pyenv
+python -m venv ~/python-envs/ethoscope_db/
+source ~/python-envs/ethoscope_db/bin/activate
+
+#install in edit mode
+pip install -e .
+```
