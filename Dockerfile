@@ -1,4 +1,4 @@
-#Dockerfile for ethoscope_metadata_server
+#Dockerfile for ethoscope_metadata_db and server
 FROM python:3.8
 LABEL maintainer="Giorgio Gilestro <giorgio@gilest.ro>"
 
@@ -8,16 +8,14 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-#install ethoscopy
-#https://github.com/gilestrolab/ethoscopy
-#RUN pip3 install ethoscopy
 RUN pip install bottle pandas
 
 WORKDIR /opt
 RUN git clone https://github.com/gilestrolab/ethoscope_metadata_db.git
+RUN pip install -e .
 
 WORKDIR /opt/ethoscope_metadata_db
-CMD ["python", "/opt/ethoscope_metadata_server/metadata_db_server.py", "--refresh", "--metadata", "/opt/ethoscope_metadata"]
+CMD ["python", "/opt/ethoscope_metadata_db/ethoscope_metadata_db/metadata_db_server.py", "--refresh", "--metadata", "/opt/ethoscope_metadata"]
 
 
 # sudo docker run -d -p 8081:8081 \
@@ -33,5 +31,5 @@ CMD ["python", "/opt/ethoscope_metadata_server/metadata_db_server.py", "--refres
 
 
 # Update git repo without regenerating the Docker:
-# sudo docker exec ethoscope-metadata-server bash -c 'cd /opt/ethoscope_metadata_server && git pull' 
+# sudo docker exec ethoscope-metadata-server bash -c 'cd /opt/ethoscope_metadata_db && git pull' 
 # sudo docker restart ethoscope-metadata-server

@@ -31,7 +31,7 @@ import bottle
 from ast import literal_eval
 
 try:
-    from ethoscopy.metadata_db import db_organiser, metadata_handler, metadata_crawler
+    from ethoscope_metadata_db.metadata_db import db_organiser, metadata_handler, metadata_crawler
 except:
     from metadata_db import db_organiser, metadata_handler, metadata_crawler
 
