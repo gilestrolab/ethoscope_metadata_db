@@ -14,9 +14,9 @@ RUN apt-get update && \
 RUN pip install bottle pandas
 
 WORKDIR /opt
-RUN git clone https://github.com/gilestrolab/ethoscope_metadata_server.git
+RUN git clone https://github.com/gilestrolab/ethoscope_metadata_db.git
 
-WORKDIR /opt/ethoscope_metadata_server
+WORKDIR /opt/ethoscope_metadata_db
 CMD ["python", "/opt/ethoscope_metadata_server/metadata_db_server.py", "--refresh", "--metadata", "/opt/ethoscope_metadata"]
 
 

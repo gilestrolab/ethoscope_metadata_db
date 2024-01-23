@@ -22,7 +22,7 @@
 #  
 #  
 
-__version__ = 1.0
+__version__ = 1.1
 
 import pandas as pd
 import fnmatch
@@ -331,7 +331,27 @@ class metadata_handler():
 
 
         return True
+
+    def export( self, filename, only_dbs=True, include_missing=False ):
+        '''
+        This is the export function that generates a txt file containing the list of db files
+
+        In the default behaviour, with only_dbs == True, the resulting text file can then be used
+        with rsync to copy all the files to a secondary folder, which is useful to upload to public repositories
+        '''
         
+        if include_missing:
+            dt = self.db_files
+        else:
+            dt = self.db_files.loc[~self.db_files.db_filename.isna()]
+
+        if only_dbs:
+            #Save to a txt file only the databases we have actually found
+            dt.db_filename.to_csv(filename, header=None, index=None)
+        else:
+            dt.to_csv(filename, index=None)
+            
+
 
 class metadata_crawler():
 
