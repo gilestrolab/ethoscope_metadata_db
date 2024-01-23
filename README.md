@@ -10,7 +10,7 @@ The core of the package is ethoscope_metadata_db which takes care of
 
 For instance:
 ```
-from ethoscope_metadata_db import db_organiser, metadata_handler
+ffrom ethoscope_metadata_db.metadata_db import db_organiser, metadata_handler
 
 metadata_filename = 'all_metadata.csv'
 datapath = "/mnt/ethoscope_results"
