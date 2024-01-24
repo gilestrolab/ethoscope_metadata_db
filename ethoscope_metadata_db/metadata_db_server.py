@@ -36,7 +36,6 @@ except:
     from metadata_db import db_organiser, metadata_handler, metadata_crawler
 
 app = bottle.Bottle()
-STATIC_DIR = "./static"
 
 @app.route('/static/<filepath:path>')
 def server_static(filepath):
@@ -165,6 +164,7 @@ if __name__ == '__main__':
     parser = optparse.OptionParser()
     parser.add_option("-d", "--db", dest="db_path", default="/mnt/ethoscope_results", help="Path to the root of the ethoscope db files")
     parser.add_option("-m", "--metadata", dest="md_path", default="/opt/ethoscope_metadata", help="Path to the root of the metadata files")
+    parser.add_option("--static", dest="static_path", default="/opt/ethoscope_metadata_db/ethoscope_metadata_db", help="Path to the root of the static folder")
     parser.add_option("-r", "--refresh", dest="refresh_db", default=False, help="Refresh ethoscope database on start", action="store_true")
 
     parser.add_option("-D", "--debug", dest="debug", default=False, help="Set DEBUG mode ON", action="store_true")
@@ -173,6 +173,7 @@ if __name__ == '__main__':
     (options, args) = parser.parse_args()
 
     option_dict = vars(options)
+    STATIC_DIR = os.path.join(option_dict["static_path"], "./static")
     DB_PATH = option_dict["db_path"]
     MD_PATH = option_dict["md_path"]
     REFRESH_DB = option_dict["refresh_db"]

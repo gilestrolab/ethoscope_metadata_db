@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  ethoscope-metadata-server:
+    container_name: ethoscope-metadata-server
+    image: ethoscope_metadata_server-lab.gilest.ro
+    volumes:
+      - /mnt/data/results:/mnt/ethoscope_results:ro
+      - /mnt/data/ethoscope_metadata:/opt/ethoscope_metadata
+    ports:
+      - "8081:8081"
+    environment:
+      VIRTUAL_HOST: "metadata.lab.gilest.ro"
+      VIRTUAL_PORT: "8081"
+      LETSENCRYPT_HOST: "metadata.lab.gilest.ro"
+      LETSENCRYPT_EMAIL: "giorgio@gilest.ro"
+    restart: unless-stopped
+    networks:
+      name: nginx-proxy
+      external: True

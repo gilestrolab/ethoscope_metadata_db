@@ -9,16 +9,18 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 RUN pip install bottle pandas
-
-WORKDIR /opt
-RUN git clone https://github.com/gilestrolab/ethoscope_metadata_db.git
-RUN pip install -e .
+RUN git clone https://github.com/gilestrolab/ethoscope_metadata_db.git /opt/ethoscope_metadata_db
 
 WORKDIR /opt/ethoscope_metadata_db
+RUN pip install -e .
+
 CMD ["python", "/opt/ethoscope_metadata_db/ethoscope_metadata_db/metadata_db_server.py", "--refresh", "--metadata", "/opt/ethoscope_metadata"]
 
-
-# sudo docker run -d -p 8081:8081 \
+# Build and run with 
+#
+# docker build -t ethoscope_metadata_server-lab.gilest.ro . --no-cache
+#
+# docker run -d -p 8081:8081 \
 #       --name ethoscope-metadata-server \
 #       --volume /mnt/data/results:/mnt/ethoscope_results:ro \
 #       --volume /mnt/data/ethoscope_metadata:/opt/ethoscope_metadata \
