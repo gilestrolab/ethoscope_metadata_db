@@ -18,7 +18,7 @@
   <p class="muted">Month of the run's start on the lab clock. Click a month to list its runs.
   {% if left_out %}{{ left_out|int }} run(s) dated before 2010 (node clock never set) are left out of the chart.{% endif %}
   {% if data.summarised_at %}Census summarised {{ data.summarised_at }} (UTC).{% endif %}</p>
-  <details class="section"><summary><h2>By year (table)</h2></summary><div class="scroll">
+  <div class="section"><h2>By year</h2><div class="scroll">
     <table>
       <thead><tr><th>Year</th>{% for key, cats, label in SERIES_LIST %}<th class="num"><span class="pill"><span class="swatch s-{{ key }}"></span>{{ label }}</span></th>{% endfor %}<th class="num">Total</th></tr></thead>
       <tbody>
@@ -29,12 +29,12 @@
       {% endfor %}
       </tbody>
     </table>
-  </div></details>
+  </div></div>
 </section>
 
 <div class="grid2" style="margin-top:1rem">
 
-  <details class="card section"><summary><h2>Who ran the unclaimed runs</h2></summary><div class="scroll">
+  <section class="card section"><h2>Who ran the unclaimed runs</h2><div class="scroll">
     <p class="muted" style="margin-top:0">Experimenter as typed on the node.</p>
     <table>
       <thead><tr><th>Experimenter</th><th class="num">Orphans</th><th class="num">Misfires</th><th class="num">Claimed</th><th class="num">All</th></tr></thead>
@@ -47,9 +47,9 @@
       {% endfor %}
       </tbody>
     </table>
-  </div></details>
+  </div></section>
 
-  <details class="card section"><summary><h2>By camera stack</h2></summary><div class="scroll">
+  <section class="card section"><h2>By camera stack</h2><div class="scroll">
     <table>
       <thead><tr><th>Stack</th>{% for key, cats, label in SERIES_LIST %}<th class="num">{{ label }}</th>{% endfor %}<th class="num">Total</th></tr></thead>
       <tbody>
@@ -60,9 +60,9 @@
       {% endfor %}
       </tbody>
     </table>
-  </div></details>
+  </div></section>
 
-  <details class="card section"><summary><h2>Metadata by location</h2></summary><div class="scroll">
+  <section class="card section"><h2>Metadata by location</h2><div class="scroll">
     {% set r = data.rows %}
     <p>{{ r.get('files', 0)|int }} metadata sheets; rows matched to exactly one run: <strong>{{ r.get('unique', 0)|int }}</strong>,
       not found: {{ r.get('not_found', 0)|int }}, ROI missing: {{ r.get('roi_missing', 0)|int }},
@@ -75,6 +75,6 @@
       {% endfor %}
       </tbody>
     </table>
-  </div></details>
+  </div></section>
 </div>
 {% endblock %}

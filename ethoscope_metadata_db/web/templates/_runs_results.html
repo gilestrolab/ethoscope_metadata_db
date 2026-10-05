@@ -9,15 +9,12 @@
         <input type="search" name="q" value="{{ selection.q }}" placeholder="Filter by path, machine, person, location…" aria-label="Filter runs">
       </form>
       <strong>{{ total|int }}</strong> runs
-      <button type="button" data-toggle-cols="runs-table">More columns</button>
-      <details class="menu"><summary>Download</summary>
-        <div class="menu-body">
-          <a href="{{ selection.url('/runs/export.csv') }}">These runs (CSV, one row each)</a>
-          <a href="{{ selection.url('/runs/ethoscopy.csv') }}">Their tubes as ethoscopy metadata</a>
-        </div></details>
-      <details class="menu"><summary>Label these {{ total|int }}</summary>
-        <div class="menu-body">{{ label_form('run', all_labels, request.url.path ~ '?' ~ query, query=query, button='Label all ' ~ (total|int) ~ ' runs') }}</div></details>
+      <span class="muted">Download:</span>
+      <a href="{{ selection.url('/runs/export.csv') }}">these runs (CSV)</a>
+      <a href="{{ selection.url('/runs/ethoscopy.csv') }}">their tubes as ethoscopy metadata</a>
     </div>
+    <div class="toolbar bulk"><span class="muted">Label these {{ total|int }} runs:</span>
+      {{ label_form('run', all_labels, request.url.path ~ '?' ~ query, query=query, button='Label all ' ~ (total|int) ~ ' runs') }}</div>
     {{ chips(selection, path, target) }}
     <div class="scroll">
     <table id="runs-table">
@@ -28,10 +25,10 @@
         {{ sort_header("Category", "category", selection, path, target) }}
         <th>Labels</th>
         {{ sort_header("Rows", "rows", selection, path, target, True) }}
-        <th class="opt">Location</th><th class="opt">Stack</th><th class="opt">Interactor</th>
-        {{ sort_header("Files", "sources", selection, path, target, True, True) }}
-        {{ sort_header("Size", "size", selection, path, target, True, True) }}
-        {{ sort_header("Length", "length", selection, path, target, True, True) }}
+        <th>Location</th><th>Stack</th><th>Interactor</th>
+        {{ sort_header("Files", "sources", selection, path, target, True) }}
+        {{ sort_header("Size", "size", selection, path, target, True) }}
+        {{ sort_header("Length", "length", selection, path, target, True) }}
       </tr></thead>
       <tbody>
       {% for r in rows %}{% set people = row_people[r.id] %}
@@ -42,12 +39,12 @@
           <td>{{ category(r.category) }}</td>
           <td>{{ label_chips(row_labels[r.id]) }}</td>
           <td class="num">{{ r.n_rows|int }}</td>
-          <td class="opt">{{ r.location or '' }}</td>
-          <td class="opt">{{ r.stack or '' }}</td>
-          <td class="opt">{{ r.interactor or '' }}</td>
-          <td class="num opt">{{ r.n_sources|int }}</td>
-          <td class="num opt">{{ r.size|size }}</td>
-          <td class="num opt">{{ r.duration_h|hours }}</td>
+          <td>{{ r.location or '' }}</td>
+          <td>{{ r.stack or '' }}</td>
+          <td>{{ r.interactor or '' }}</td>
+          <td class="num">{{ r.n_sources|int }}</td>
+          <td class="num">{{ r.size|size }}</td>
+          <td class="num">{{ r.duration_h|hours }}</td>
         </tr>
       {% else %}
         <tr><td colspan="12" class="muted">No runs match these filters.</td></tr>

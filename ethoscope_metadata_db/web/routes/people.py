@@ -51,6 +51,7 @@ def create(
     kind: str = Form("person"),
     username: str = Form(""),
     role: str = Form(""),
+    active: bool = Form(False),
     cur: sqlite3.Connection = Depends(get_curation),
 ):
     """Create a person, or a not-a-person entry, from a suggested name group (or from scratch)."""
@@ -68,6 +69,7 @@ def create(
             kind=kind,
             username=username,
             role=role,
+            active=active,
         )
     except CurationError as exc:
         return back_to("/people", error=str(exc))
@@ -154,11 +156,12 @@ def edit(
     name: str = Form(...),
     username: str = Form(""),
     role: str = Form(""),
+    active: bool = Form(False),
     cur: sqlite3.Connection = Depends(get_curation),
 ):
-    """Set the full name, username and role."""
+    """Set the full name, username, role and whether they are in the lab now."""
     try:
-        actions.edit_person(cur, current_user(request), person_id, name, username, role)
+        actions.edit_person(cur, current_user(request), person_id, name, username, role, active)
     except CurationError as exc:
         return back_to(f"/people/{person_id}", error=str(exc))
     return back_to(f"/people/{person_id}", notice="Saved")

@@ -8,9 +8,10 @@ path or string, never by census id, because census ids change when files are
 re-registered: the census can be rebuilt without losing any curation.
 
 A person has a full ``name``, an optional lab ``username`` (unique) and
-``role``. Their ``kind`` is ``person`` (a real, unambiguous person: only these
-own runs and files) or ``shared`` (a name reviewed and found not to be a
-person: guest accounts, shared or project folders, teams).
+``role``, and is ``active`` (in the lab now) or not (alumni, the default).
+Their ``kind`` is ``person`` (a real, unambiguous person: only these own runs
+and files) or ``shared`` (a name reviewed and found not to be a person: guest
+accounts, shared or project folders, teams).
 
 Every edit goes through :class:`Change`, which records the before and after
 of each row it touches, so :func:`undo` can reverse any logged action.
@@ -47,7 +48,8 @@ CREATE TABLE IF NOT EXISTS person (
     note TEXT,
     kind TEXT NOT NULL DEFAULT 'person',
     username TEXT,
-    role TEXT
+    role TEXT,
+    active INTEGER NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX IF NOT EXISTS person_username ON person (username COLLATE NOCASE)
     WHERE username IS NOT NULL;
@@ -145,6 +147,7 @@ def _upgrade(conn: sqlite3.Connection) -> None:
             ("kind", "TEXT NOT NULL DEFAULT 'person'"),
             ("username", "TEXT"),
             ("role", "TEXT"),
+            ("active", "INTEGER NOT NULL DEFAULT 0"),
         ):
             if column not in columns:
                 conn.execute(f"ALTER TABLE person ADD COLUMN {column} {definition}")

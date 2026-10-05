@@ -19,7 +19,7 @@ Label a selection from the Runs or Metadata files pages, or <a href="/labels/sug
     </tbody>
   </table>
 </section>
-<details class="card section"><summary><h2>New label</h2></summary>
+<section class="card section"><h2>New label</h2>
   <form method="post" action="/labels" class="stack-form">
     <label>Name <input type="text" name="name" required></label>
     <label>Kind <select name="kind"><option value="tag">tag</option><option value="project">project</option></select></label>
@@ -28,5 +28,5 @@ Label a selection from the Runs or Metadata files pages, or <a href="/labels/sug
     <label>Description <textarea name="description" rows="2"></textarea></label>
     <button type="submit">Create</button>
   </form>
-</details>
+</section>
 {% endblock %}

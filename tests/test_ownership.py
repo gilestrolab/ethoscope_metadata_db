@@ -127,11 +127,9 @@ class TestKinds:
         old.commit()
         old.close()
         conn = store.connect(path)
-        assert tuple(conn.execute("SELECT kind, username, role FROM person").fetchone()) == (
-            "person",
-            None,
-            None,
-        )
+        assert tuple(
+            conn.execute("SELECT kind, username, role, active FROM person").fetchone()
+        ) == ("person", None, None, 0)
         assert "via" in {r[1] for r in conn.execute("PRAGMA table_info(run_person)")}
         assert conn.execute("SELECT value FROM meta WHERE key = 'built_for'").fetchone() is None
         conn.close()
@@ -149,6 +147,17 @@ class TestPersonDetails:
         assert tuple(cur.execute("SELECT username, role FROM person").fetchone()) == (None, None)
         store.undo(cur, cur.execute("SELECT max(id) FROM audit").fetchone()[0], WHO)
         assert cur.execute("SELECT role FROM person").fetchone()[0] == "PhD student"
+
+    def test_in_the_lab_or_alumni(self, cur):
+        alumna = actions.create_person(cur, WHO, "Ada Lovelace")
+        current = actions.create_person(cur, WHO, "Rosalind Franklin", active=True)
+        team = actions.create_person(cur, WHO, "infection team", kind="shared", active=True)
+        active = dict(cur.execute("SELECT id, active FROM person").fetchall())
+        assert active == {alumna: 0, current: 1, team: 0}  # a not-a-person is never "in the lab"
+        actions.edit_person(cur, WHO, current, "Rosalind Franklin", "rfranklin", "postdoc", active=False)
+        assert cur.execute("SELECT active FROM person WHERE id = ?", (current,)).fetchone()[0] == 0
+        store.undo(cur, cur.execute("SELECT max(id) FROM audit").fetchone()[0], WHO)
+        assert cur.execute("SELECT active FROM person WHERE id = ?", (current,)).fetchone()[0] == 1
 
     def test_usernames_are_unique_and_account_like(self, cur):
         actions.create_person(cur, WHO, "Ada Lovelace", username="alovelace")
@@ -211,7 +220,7 @@ class TestPeoplePage:
         alice = conn.execute("SELECT id FROM person WHERE username = 'alice'").fetchone()[0]
         conn.close()
         assert names == {"carol": "shared", "Alice Ant": "person"}
-        assert "No username or role yet" not in client.get(f"/people/{alice}").text
+        assert "Former lab member · <span" in client.get(f"/people/{alice}", headers=ORIGIN).text
         client.post(
             f"/people/{alice}/edit",
             data={"name": "Alice Antonelli", "username": "alice", "role": "postdoc"},
@@ -220,6 +229,15 @@ class TestPeoplePage:
         page = client.get("/people", headers=ORIGIN).text
         assert "Alice Antonelli" in page and "<td>postdoc</td>" in page
         assert '<option value="PhD student">' in page  # role choices
+        assert "In the lab (0)" in page and "Alumni (1)" in page
+        client.post(
+            f"/people/{alice}/edit",
+            data={"name": "Alice Antonelli", "username": "alice", "role": "postdoc", "active": "1"},
+            headers=ORIGIN,
+        )
+        page = client.get("/people", headers=ORIGIN).text
+        assert "In the lab (1)" in page and "Alumni (0)" in page
+        assert "In the lab · <span" in client.get(f"/people/{alice}", headers=ORIGIN).text
 
     def test_switch_kind_from_the_person_page(self, client):
         client.post("/people", data={"name": "guest", "alias": ["home:carol"]}, headers=ORIGIN)

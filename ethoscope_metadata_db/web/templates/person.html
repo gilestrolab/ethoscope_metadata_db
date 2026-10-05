@@ -5,7 +5,7 @@
 {% set here = request.url.path %}{% set f = fold(categories) %}
 <p><a href="/people">← all people</a></p>
 <h1>{{ person.name }}</h1>
-{% if person.kind == 'person' %}<p class="muted">{% if person.username %}<span class="mono">{{ person.username }}</span>{% endif %}{% if person.username and person.role %} · {% endif %}{{ person.role or '' }}{% if not person.username and not person.role %}No username or role yet: add them under Details.{% endif %}</p>{% endif %}
+{% if person.kind == 'person' %}<p class="muted">{{ 'In the lab' if person.active else 'Former lab member' }}{% if person.username %} · <span class="mono">{{ person.username }}</span>{% endif %}{% if person.role %} · {{ person.role }}{% endif %}</p>{% endif %}
 {% if person.kind == 'shared' %}
 <div class="banner">Marked as not a person: these names own no runs or files.
   <form method="post" action="/people/{{ person.id }}/kind" class="inline-form"><input type="hidden" name="kind" value="person"><button type="submit">This is a person</button></form></div>
@@ -18,29 +18,30 @@
 <p>{% for a in aliases %}{{ alias_chip(a) }}{% endfor %}</p>
 {% if n_runs %}<section class="card"><div class="scroll chart-wrap">{{ chart }}</div>{{ legend() }}</section>{% endif %}
 
-<details class="card section"><summary><h2>Machines used and metadata files</h2></summary>
+<section class="card section"><h2>Machines used and metadata files</h2>
   <div class="grid2">
     <table><thead><tr><th>Machine</th><th class="num">Runs</th></tr></thead><tbody>
       {% for m in machines %}<tr><td><a href="/runs?person={{ person.name|urlencode }}&machine={{ m.machine_name|urlencode }}">{{ m.machine_name }}</a></td><td class="num">{{ m.n|int }}</td></tr>{% endfor %}</tbody></table>
     <table><thead><tr><th>Metadata files</th><th class="num">Files</th></tr></thead><tbody>
       {% for x in files %}<tr><td><a href="/files?person={{ person.name|urlencode }}&outcome={{ x.outcome|urlencode }}">{{ x.outcome }}</a></td><td class="num">{{ x.n|int }}</td></tr>{% endfor %}</tbody></table>
   </div>
-</details>
+</section>
 {% endif %}
 
 <datalist id="roles">{% for r in roles %}<option value="{{ r }}">{% endfor %}</datalist>
-<details class="card section" {{ 'open' if person.kind == 'person' and not (person.username and person.role) }}><summary><h2>Details</h2></summary>
+<section class="card section"><h2>Details</h2>
   <form method="post" action="/people/{{ person.id }}/edit" class="fields">
     <label>Full name <input type="text" name="name" value="{{ person.name }}" required></label>
     {% if person.kind == 'person' %}
     <label>Username <input type="text" name="username" value="{{ person.username or '' }}" placeholder="lab account, e.g. home folder name"></label>
     <label>Role in the lab <input type="text" name="role" list="roles" value="{{ person.role or '' }}"></label>
+    <label class="check"><input type="checkbox" name="active" value="1" {{ 'checked' if person.active }}> in the lab now (untick for alumni)</label>
     {% endif %}
     <button type="submit">Save</button>
   </form>
-</details>
+</section>
 
-<details class="card section" {{ 'open' if person.kind == 'shared' }}><summary><h2>Names and merge</h2></summary>
+<section class="card section"><h2>Names and merge</h2>
   <table><tbody>
   {% for a in aliases %}<tr><td>{{ a.kind }}</td><td>{{ a.value }}</td><td>
     <form method="post" action="/people/{{ person.id }}/alias/remove" class="inline-form"><input type="hidden" name="kind" value="{{ a.kind }}"><input type="hidden" name="value" value="{{ a.value }}"><button class="link" type="submit">remove</button></form></td></tr>{% endfor %}
@@ -52,9 +53,9 @@
     <select name="into">{% for o in others %}<option value="{{ o.id }}">{{ o.name }}</option>{% endfor %}</select><button type="submit">Merge</button></form>{% endif %}
   {% if person.kind == 'person' %}<form method="post" action="/people/{{ person.id }}/kind" class="inline-form"><input type="hidden" name="kind" value="shared"><button type="submit">Not a person</button> <span class="muted">(a guest account, shared folder or team: its names will own nothing)</span></form>{% endif %}
   <form method="post" action="/people/{{ person.id }}/delete" class="inline-form"><button type="submit">Delete this person</button> <span class="muted">(can be undone from Changes)</span></form>
-</details>
+</section>
 
-<details class="card section" {{ 'open' if notes }}><summary><h2>Notes{% if notes %} ({{ notes|length }}){% endif %}</h2></summary>
+<section class="card section"><h2>Notes{% if notes %} ({{ notes|length }}){% endif %}</h2>
   {{ notes_block(notes, 'person', person.id|string, here) }}
-</details>
+</section>
 {% endblock %}

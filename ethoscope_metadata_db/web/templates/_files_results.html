@@ -9,11 +9,10 @@
         <input type="search" name="q" value="{{ selection.q }}" placeholder="Filter by path, sheet or home…" aria-label="Filter files">
       </form>
       <strong>{{ total|int }}</strong> sheets
-      <button type="button" data-toggle-cols="files-table">More columns</button>
-      <details class="menu"><summary>Label these {{ total|int }}</summary>
-        <div class="menu-body">{{ label_form('file', all_labels, request.url.path ~ '?' ~ query, query=query, button='Label all ' ~ (total|int) ~ ' files') }}</div></details>
       <a href="/files?all=1&outcome=not+metadata" class="muted">tabular files that are not metadata</a>
     </div>
+    <div class="toolbar bulk"><span class="muted">Label these {{ total|int }} files:</span>
+      {{ label_form('file', all_labels, request.url.path ~ '?' ~ query, query=query, button='Label all ' ~ (total|int) ~ ' files') }}</div>
     {{ chips(selection, path, target) }}
     <div class="scroll">
     <table id="files-table">
@@ -23,10 +22,10 @@
         {{ sort_header("Matched", "matched", selection, path, target, True) }}
         {{ sort_header("Runs", "dbs", selection, path, target, True) }}
         <th>Labels</th>
-        <th class="opt">Location</th>
-        {{ sort_header("Not found", "not_found", selection, path, target, True, True) }}
-        {{ sort_header("Dates from", "first", selection, path, target, False, True) }}
-        {{ sort_header("Modified", "modified", selection, path, target, False, True) }}
+        <th>Location</th>
+        {{ sort_header("Not found", "not_found", selection, path, target, True) }}
+        {{ sort_header("Dates from", "first", selection, path, target) }}
+        {{ sort_header("Modified", "modified", selection, path, target) }}
       </tr></thead>
       <tbody>
       {% for r in rows %}{% set people = row_people[r.id] %}
@@ -37,10 +36,10 @@
           <td class="num nowrap">{{ r.n_unique|int }} <span class="muted">/ {{ r.n_rows|int }}</span></td>
           <td class="num">{{ r.n_dbs|int }}</td>
           <td>{{ label_chips(row_labels[r.id]) }}</td>
-          <td class="opt">{{ r.tag or '' }}</td>
-          <td class="num opt">{{ r.n_not_found|int }}</td>
-          <td class="nowrap opt">{% if r.date_min %}{{ r.date_min }}{% if r.date_max != r.date_min %} →<br>{{ r.date_max }}{% endif %}{% endif %}</td>
-          <td class="nowrap opt">{{ r.mtime|mtime }}</td>
+          <td>{{ r.tag or '' }}</td>
+          <td class="num">{{ r.n_not_found|int }}</td>
+          <td class="nowrap">{% if r.date_min %}{{ r.date_min }}{% if r.date_max != r.date_min %} →<br>{{ r.date_max }}{% endif %}{% endif %}</td>
+          <td class="nowrap">{{ r.mtime|mtime }}</td>
         </tr>
       {% else %}
         <tr><td colspan="10" class="muted">No metadata files match these filters.</td></tr>

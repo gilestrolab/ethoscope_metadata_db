@@ -1,44 +1,24 @@
 {% extends "base.html" %}
-{% from "_macros.html" import alias_chip, review_group %}
+{% from "_macros.html" import alias_chip, review_group, people_table %}
 {% block title %}People · Ethoscope census{% endblock %}
 {% block content %}
 <h1>People</h1>
 <p class="summary"><strong>{{ coverage.owned_runs|int }}</strong> of {{ coverage.runs|int }} runs have an owner ({{ coverage.runs_pct }}%)
   · <strong>{{ coverage.owned_files|int }}</strong> of {{ coverage.files|int }} metadata files ({{ coverage.files_pct }}%)
   {% if coverage.owned_runs %}<span class="muted">· runs owned through the name typed on the node: {{ coverage.via.get('experimenter', 0)|int }}, through their metadata files: {{ coverage.via.get('metadata', 0)|int }}</span>{% endif %}</p>
-<details class="help"><summary class="muted">How owners are found</summary>
-  <p class="muted">Each run has at most one owner: the person whose experimenter name was typed on the node, otherwise the one person who owns the metadata files that describe it. A metadata file belongs to the person whose home folder it is in. Names marked as not a person (guest accounts, shared or project folders) own nothing, and a run described by files of two different people is left without an owner.</p></details>
+<p class="muted">Each run has at most one owner: the person whose experimenter name was typed on the node, otherwise the one person who owns the metadata files that describe it. A metadata file belongs to the person whose home folder it is in. Names marked as not a person (guest accounts, shared or project folders) own nothing, and a run described by files of two different people is left without an owner.</p>
 
 <datalist id="roles">{% for r in roles %}<option value="{{ r }}">{% endfor %}</datalist>
 {% set several = [] %}{% set single = [] %}{% for g in groups %}{% if g.members|length > 1 %}{% set _ = several.append(g) %}{% else %}{% set _ = single.append(g) %}{% endif %}{% endfor %}
-<details class="card section" open><summary><h2>To review: names that probably belong together ({{ several|length }})</h2></summary>
-  <p class="muted">Experimenter names and home folders that differ only in case or punctuation, or follow the first.last ↔ flast pattern. Untick anything that does not belong, then create the person, add the names to someone already listed, or mark them as not a person.</p>
-  {% for g in several %}{{ review_group(g, people, shared) }}{% else %}<p class="muted">Nothing left to review.</p>{% endfor %}
-</details>
-<details class="card section" {{ 'open' if not several and single }}><summary><h2>To review: other names ({{ single|length }})</h2></summary>
-  {% for g in single %}{{ review_group(g, people, shared) }}{% else %}<p class="muted">Nothing left to review.</p>{% endfor %}
-</details>
-
-<section class="card scroll">
-  <h2>People ({{ people|length }})</h2>
-  <table>
-    <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Names they appear under</th><th class="num">Runs owned</th><th class="num">Orphans</th><th class="num">Metadata files</th></tr></thead>
-    <tbody>
-    {% for p in people %}
-      <tr><td><a class="who" href="/people/{{ p.person.id }}">{{ p.person.name }}</a></td>
-        <td class="mono">{{ p.person.username or '' }}</td><td>{{ p.person.role or '' }}</td>
-        <td>{% for a in p.aliases %}{{ alias_chip(a) }}{% endfor %}</td>
-        <td class="num"><a href="/runs?person={{ p.person.name|urlencode }}">{{ p.n_runs|int }}</a></td>
-        <td class="num"><a href="/runs?person={{ p.person.name|urlencode }}&category=orphan">{{ p.counts.get('orphan', 0)|int }}</a></td>
-        <td class="num"><a href="/files?person={{ p.person.name|urlencode }}">{{ p.n_files|int }}</a></td></tr>
-    {% else %}
-      <tr><td colspan="7" class="muted">No people yet: start from the names to review above.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
+{% set in_lab = people|selectattr('person.active')|list %}{% set alumni = people|rejectattr('person.active')|list %}
+<section class="card section scroll"><h2>In the lab ({{ in_lab|length }})</h2>
+  {{ people_table(in_lab, 'Nobody marked as in the lab yet: tick "in the lab" on a person\'s page.') }}
+</section>
+<section class="card section scroll"><h2>Alumni ({{ alumni|length }})</h2>
+  {{ people_table(alumni, 'None yet: start from the names to review below.') }}
 </section>
 
-<details class="card section"><summary><h2>Not people ({{ shared|length }})</h2></summary>
+<section class="card section"><h2>Not people ({{ shared|length }})</h2>
   <p class="muted">Names reviewed and found not to be a person. Their runs and files have no owner unless the experimenter name says otherwise.</p>
   <table>
     <tbody>
@@ -47,13 +27,22 @@
     {% else %}<tr><td class="muted">None yet.</td></tr>{% endfor %}
     </tbody>
   </table>
-</details>
+</section>
 
-<details class="card section"><summary><h2>New person</h2></summary>
+<section class="card section"><h2>New person</h2>
   <form method="post" action="/people" class="inline-form">
     <input type="text" name="name" placeholder="Full name" required aria-label="Full name">
     <input type="text" name="username" placeholder="username" aria-label="Username" size="10">
     <input type="text" name="role" list="roles" placeholder="role" aria-label="Role in the lab" size="11">
+    <label class="check"><input type="checkbox" name="active" value="1"> in the lab</label>
     <button type="submit">Create</button></form>
-</details>
+</section>
+
+<section class="card section"><h2>To review: names that probably belong together ({{ several|length }})</h2>
+  <p class="muted">Experimenter names and home folders that differ only in case or punctuation, or follow the first.last ↔ flast pattern. Untick anything that does not belong, then create the person, add the names to someone already listed, or mark them as not a person.</p>
+  {% for g in several %}{{ review_group(g, people, shared) }}{% else %}<p class="muted">Nothing left to review.</p>{% endfor %}
+</section>
+<section class="card section"><h2>To review: other names ({{ single|length }})</h2>
+  {% for g in single %}{{ review_group(g, people, shared) }}{% else %}<p class="muted">Nothing left to review.</p>{% endfor %}
+</section>
 {% endblock %}

@@ -14,7 +14,7 @@
   · <a href="/runs/ethoscopy.csv?label={{ label.name|urlencode }}">download ethoscopy metadata</a></p>
 {% if n_runs %}<section class="card"><div class="scroll chart-wrap">{{ chart }}</div>{{ legend() }}</section>{% endif %}
 
-<details class="card section"><summary><h2>What it is attached to ({{ links|length }})</h2></summary>
+<section class="card section"><h2>What it is attached to ({{ links|length }})</h2>
   <p class="muted">Runs come from: {% for k, n in via.items() %}{{ k }} {{ n|int }}{% if not loop.last %}, {% endif %}{% endfor %}.</p>
   <table>
     <tbody>
@@ -26,9 +26,9 @@
     {% endfor %}
     </tbody>
   </table>
-</details>
+</section>
 
-<details class="card section"><summary><h2>Edit, merge or delete</h2></summary>
+<section class="card section"><h2>Edit, merge or delete</h2>
   <form method="post" action="/labels/{{ label.id }}/edit" class="stack-form">
     <label>Name <input type="text" name="name" value="{{ label.name }}" required></label>
     <label>Kind <select name="kind">{% for k in ('tag', 'project') %}<option value="{{ k }}" {{ 'selected' if k == label.kind }}>{{ k }}</option>{% endfor %}</select></label>
@@ -44,9 +44,9 @@
   {% endif %}
   <form method="post" action="/labels/{{ label.id }}/delete" class="inline-form"><button type="submit">Delete this label</button>
     <span class="muted">(can be undone from Changes)</span></form>
-</details>
+</section>
 
-<details class="card section" {{ 'open' if notes }}><summary><h2>Notes{% if notes %} ({{ notes|length }}){% endif %}</h2></summary>
+<section class="card section"><h2>Notes{% if notes %} ({{ notes|length }}){% endif %}</h2>
   {{ notes_block(notes, 'label', label.id|string, here) }}
-</details>
+</section>
 {% endblock %}

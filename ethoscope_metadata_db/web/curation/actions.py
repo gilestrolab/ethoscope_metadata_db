@@ -218,6 +218,7 @@ def create_person(
     kind: str = "person",
     username: str = "",
     role: str = "",
+    active: bool = False,
 ) -> int:
     """Create a person (or a ``shared`` not-a-person entry), taking over some aliases.
 
@@ -227,6 +228,7 @@ def create_person(
             given to someone else move to the new entry.
         username: Lab account name (unique), e.g. ``alovelace``.
         role: Role in the lab (see :data:`ROLES`; free text).
+        active: In the lab now; otherwise alumni.
     """
     name = clean_name(name)
     if kind not in PERSON_KINDS:
@@ -239,9 +241,10 @@ def create_person(
     with Change(
         conn, who, "create person", f"created {what} {name!r} ({len(aliases)} alias(es))"
     ) as change:
-        person_id = int(change.insert("person", {"name": name, "kind": kind, **details})["id"])
-        for kind, value in aliases:
-            _set_alias(conn, change, person_id, kind, value)
+        row = {"name": name, "kind": kind, "active": int(active and kind == "person"), **details}
+        person_id = int(change.insert("person", row)["id"])
+        for alias_kind, value in aliases:
+            _set_alias(conn, change, person_id, alias_kind, value)
     return person_id
 
 
@@ -316,15 +319,23 @@ def edit_person(
     name: str,
     username: str = "",
     role: str = "",
+    active: bool = False,
 ) -> None:
-    """Set a person's full name, username and role (blank username or role clears it)."""
+    """Set a person's full name, username, role and whether they are in the lab now.
+
+    Every field is set (the form sends them all): a blank username or role clears it.
+    """
     person = _person(conn, person_id)
     name = clean_name(name)
     if conn.execute(
         "SELECT 1 FROM person WHERE name = ? AND id != ?", (name, person_id)
     ).fetchone():
         raise CurationError(f"a person called {name!r} already exists: merge them instead")
-    values = {"name": name, **_person_details(conn, person_id, username, role)}
+    values = {
+        "name": name,
+        "active": int(active),
+        **_person_details(conn, person_id, username, role),
+    }
     renamed = f" (now {name!r})" if name != person["name"] else ""
     with Change(conn, who, "edit person", f"edited {person['name']!r}{renamed}") as change:
         change.update("person", {"id": person_id}, values)

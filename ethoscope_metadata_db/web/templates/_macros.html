@@ -19,23 +19,18 @@
 <div class="facet">
   <h3>{{ facet.label }}</h3>
   <ul>
-    {% for v in values %}{% if loop.index == 7 %}</ul><details class="more"><summary>more ({{ values|length - 6 }})</summary><ul>{% endif %}
+    {% for v in values %}
     <li><a href="{{ selection.toggle_url(path, facet.param, v.value) }}" class="{{ 'on' if v.on }}"
            hx-get="{{ selection.toggle_url(path, facet.param, v.value) }}" hx-target="{{ target }}" hx-push-url="true">
       <span>{% if facet.param == 'category' %}{{ category(v.value) }}{% else %}{{ v.value }}{% endif %}</span><span class="n">{{ v.n|int }}</span></a></li>
     {% endfor %}
-  </ul>{% if values|length > 6 %}</details>{% endif %}
+  </ul>
 </div>
 {%- endmacro %}
 
 {% macro facets(table, facets, selection, path, target) -%}
 <aside class="facets">
-  {% for facet in table.facets if facet.primary and facets[facet.param] %}{{ facet_block(facet, facets[facet.param], selection, path, target) }}{% endfor %}
-  {% set secondary = table.facets|rejectattr('primary')|list %}
-  {% set any_on = secondary|selectattr('param', 'in', selection.filters)|list %}
-  <details class="more-filters" {{ 'open' if any_on }}><summary>More filters</summary>
-  {% for facet in secondary if facets[facet.param] %}{{ facet_block(facet, facets[facet.param], selection, path, target) }}{% endfor %}
-  </details>
+  {% for facet in table.facets if facets[facet.param] %}{{ facet_block(facet, facets[facet.param], selection, path, target) }}{% endfor %}
 </aside>
 {%- endmacro %}
 
@@ -51,10 +46,10 @@
 {% endif %}
 {%- endmacro %}
 
-{% macro sort_header(label, key, selection, path, target, num=False, opt=False) -%}
+{% macro sort_header(label, key, selection, path, target, num=False) -%}
 {% set on = selection.sort == key %}
 {% set next = ('' if on and selection.desc else '-') ~ key %}
-<th class="{{ 'num' if num }} {{ 'opt' if opt }}"><a href="{{ selection.url(path, sort=next) }}" hx-get="{{ selection.url(path, sort=next) }}" hx-target="{{ target }}" hx-push-url="true">{{ label }}{% if on %} {{ '↓' if selection.desc else '↑' }}{% endif %}</a></th>
+<th class="{{ 'num' if num }}"><a href="{{ selection.url(path, sort=next) }}" hx-get="{{ selection.url(path, sort=next) }}" hx-target="{{ target }}" hx-push-url="true">{{ label }}{% if on %} {{ '↓' if selection.desc else '↑' }}{% endif %}</a></th>
 {%- endmacro %}
 
 {% macro pager(selection, path, total, pages, target) -%}
@@ -102,6 +97,7 @@
     <input type="text" name="name" placeholder="Full name" aria-label="Full name" size="18">
     <input type="text" name="username" value="{{ homes[0] if homes }}" placeholder="username" aria-label="Username" size="10">
     <input type="text" name="role" list="roles" placeholder="role" aria-label="Role in the lab" size="11">
+    <label class="check"><input type="checkbox" name="active" value="1"> in the lab</label>
     <button type="submit" name="kind" value="person">Create person</button>
     <button type="submit" name="kind" value="shared" title="A guest account, a shared or project folder, a team: these names will own nothing (filed as {{ g.suggested }} unless you type a name)">Not a person</button>
     {% if people or shared %}<span class="muted">or add to</span>
@@ -112,4 +108,22 @@
     <button type="submit" formaction="/people/join">Add</button>{% endif %}
   </div>
 </form>
+{%- endmacro %}
+
+{% macro people_table(rows, empty) -%}
+<table>
+  <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Names they appear under</th><th class="num">Runs owned</th><th class="num">Orphans</th><th class="num">Metadata files</th></tr></thead>
+  <tbody>
+  {% for p in rows %}
+    <tr><td><a class="who" href="/people/{{ p.person.id }}">{{ p.person.name }}</a></td>
+      <td class="mono">{{ p.person.username or '' }}</td><td>{{ p.person.role or '' }}</td>
+      <td>{% for a in p.aliases %}{{ alias_chip(a) }}{% endfor %}</td>
+      <td class="num"><a href="/runs?person={{ p.person.name|urlencode }}">{{ p.n_runs|int }}</a></td>
+      <td class="num"><a href="/runs?person={{ p.person.name|urlencode }}&category=orphan">{{ p.counts.get('orphan', 0)|int }}</a></td>
+      <td class="num"><a href="/files?person={{ p.person.name|urlencode }}">{{ p.n_files|int }}</a></td></tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">{{ empty }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
 {%- endmacro %}

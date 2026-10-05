@@ -24,7 +24,6 @@ class Facet:
     Attributes:
         limit: How many values to count and offer (0: a hidden filter).
         by_value: List values in order (years) rather than by count.
-        primary: Shown by default; others sit under "More filters".
     """
 
     param: str
@@ -32,7 +31,6 @@ class Facet:
     label: str
     limit: int = 12
     by_value: bool = False
-    primary: bool = True
 
     def clause(self, values: list[str]) -> tuple[str, list]:
         parts, params = [], []

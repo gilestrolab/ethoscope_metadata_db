@@ -109,8 +109,9 @@ census), so the census can be rebuilt without losing it:
 - **Labels and projects**: free tags, or projects with a DOI, description and authors, attached to
   runs, metadata files or whole folders. Label any filtered selection of runs or files in one go,
   or accept a suggested project folder. A label on a metadata file also covers the runs it claims.
-- **People**: a person has a full name, a lab username and a role, and gathers the names they
-  appear under (home folders, experimenter names typed on the nodes). The People page is a
+- **People**: a person has a full name, a lab username, a role and whether they are in the
+  lab now or alumni, and gathers the names they appear under (home folders, experimenter
+  names typed on the nodes). The People page lists people in the lab, then alumni, then a
   review queue: it groups names that probably belong together, and each group becomes a
   person, joins an existing one, or is marked as not a person (guest accounts, shared folders).
   Each run then has at most one owner: the person whose experimenter name was typed on the
@@ -118,7 +119,7 @@ census), so the census can be rebuilt without losing it:
   the person whose home folder it is in.
 - **Notes** on runs, files, labels and people, and a **Changes** log where any edit can be undone.
 
-Pages show the essentials first; secondary columns, filters and sections open on request.
+Every page shows all its sections, columns and filters at once; nothing is folded away.
 
 It expects to sit behind an SSO proxy (oauth2-proxy with OIDC) that sets `X-Forwarded-Email`;
 requests without it are refused. For local development only, set `ETHOCENSUS_REQUIRE_USER=0`.

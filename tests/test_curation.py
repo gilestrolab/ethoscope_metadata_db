@@ -301,11 +301,27 @@ class TestCurationPages:
             in client.get("/labels/suggestions", headers=ORIGIN).text
         )
 
-    def test_simplified_pages_hide_detail_by_default(self, client):
+    def test_nothing_is_folded_away(self, client, census_path):
+        conn = census_store.connect(census_path)
+        run_id, file_id = (
+            conn.execute("SELECT min(id) FROM db_summary").fetchone()[0],
+            conn.execute("SELECT min(id) FROM file_summary").fetchone()[0],
+        )
+        conn.close()
+        for url in (
+            "/",
+            "/runs",
+            "/files",
+            "/people",
+            "/labels",
+            f"/runs/{run_id}",
+            f"/files/{file_id}",
+        ):
+            page = client.get(url, headers=ORIGIN).text
+            assert "<details" not in page and "data-toggle-cols" not in page, url
         runs = client.get("/runs", headers=ORIGIN).text
-        assert 'class="opt"' in runs and "More columns" in runs and "More filters" in runs
-        overview = client.get("/", headers=ORIGIN).text
-        assert "<details" in overview and "By year (table)" in overview
+        # Every column and filter is there: the former extras and secondary filters too.
+        assert "<th>Location</th>" in runs and "Camera stack" in runs and "Label these" in runs
 
 
 class TestPeopleFormRegression:

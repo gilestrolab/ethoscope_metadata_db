@@ -3,7 +3,7 @@
 {% block title %}{{ file.path.rsplit('/', 1)[-1] }} · Ethoscope census{% endblock %}
 {% block content %}
 {% set here = request.url.path %}
-{% set unmatched_n = file.n_rows - file.n_unique %}
+{% set unmatched_n = (file.n_rows or 0) - (file.n_unique or 0) %}
 <p><a href="/files?home={{ (file.home or NONE)|urlencode }}">← metadata files of {{ file.home or 'this location' }}</a></p>
 <h1 class="path">{{ file.path.rsplit('/', 1)[-1] }}{% if file.sheet %} [{{ file.sheet }}]{% endif %}</h1>
 <p class="summary">{{ file.outcome }}
@@ -16,7 +16,7 @@
 {% if file.note %}<p><span class="warn">{{ file.note }}</span></p>{% endif %}
 
 {% if unmatched %}
-<details class="card section" {{ 'open' if unmatched|length <= 20 }}><summary><h2>Rows not matched to one run ({{ unmatched_n|int }})</h2></summary>
+<section class="card section"><h2>Rows not matched to one run ({{ unmatched_n|int }})</h2>
   <p class="muted">
     {% for label, n in [('no run starts that day', file.n_not_found), ('region not in the run', file.n_roi_missing), ('run unreadable', file.n_roi_unknown), ('day/month order unknown', file.n_date_ambiguous), ('several candidate runs', file.n_ambiguous), ('missing date, machine or region', file.n_incomplete)] if n %}{{ label }}: {{ n|int }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
   <div class="scroll"><table>
@@ -30,11 +30,11 @@
     </tbody>
   </table></div>
   {% if unmatched|length >= 500 %}<p class="muted">First 500 shown.</p>{% endif %}
-</details>
+</section>
 {% endif %}
 
 {% if runs %}
-<details class="card section"><summary><h2>Runs it claims ({{ runs|length }})</h2></summary>
+<section class="card section"><h2>Runs it claims ({{ runs|length }})</h2>
   <div class="scroll"><table>
     <thead><tr><th>Start</th><th>Machine</th><th>Category</th><th class="num">Rows</th></tr></thead>
     <tbody>
@@ -44,10 +44,10 @@
     {% endfor %}
     </tbody>
   </table></div>
-</details>
+</section>
 {% endif %}
 
-<details class="card section"><summary><h2>File details</h2></summary>
+<section class="card section"><h2>File details</h2>
   <dl class="facts">
     <dt>Path</dt><dd class="path mono">{{ file.path }}</dd>
     <dt>Home · location</dt><dd>{{ file.home or '–' }} · {{ file.tag or '–' }}</dd>
@@ -57,15 +57,15 @@
     <dt>Columns used</dt><dd>{% for field, column in column_map.items() %}<code>{{ column }}</code>{% if field != column %} as {{ field }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
     <dt>All columns</dt><dd class="muted">{{ columns|join(', ') }}</dd>
   </dl>
-</details>
+</section>
 
 {% if copies %}
-<details class="card section"><summary><h2>Identical copies ({{ copies|length }})</h2></summary>
+<section class="card section"><h2>Identical copies ({{ copies|length }})</h2>
   <ul>{% for c in copies %}<li><a class="path" href="/files/{{ c.id }}">{{ c.path }}</a> <span class="muted">{{ c.tag }}</span></li>{% endfor %}</ul>
-</details>
+</section>
 {% endif %}
 
-<details class="card section" {{ 'open' if notes }}><summary><h2>Labels and notes{% if notes %} ({{ notes|length }} note{{ 's' if notes|length > 1 }}){% endif %}</h2></summary>
+<section class="card section"><h2>Labels and notes{% if notes %} ({{ notes|length }} note{{ 's' if notes|length > 1 }}){% endif %}</h2>
   {% for l in labels %}{% if l.via == 'file' %}
     <form method="post" action="/labels/{{ l.id }}/unlink" class="inline-form">{{ label_chips([l]) }}
       <input type="hidden" name="target_type" value="file"><input type="hidden" name="target" value="{{ file.path }}"><input type="hidden" name="back" value="{{ here }}">
@@ -76,5 +76,5 @@
   <p class="muted">Or label its whole folder <code class="path">{{ folder }}</code>:</p>
   <p>{{ label_form('folder', all_labels, here, target=folder, button='Label the folder') }}</p>
   {{ notes_block(notes, 'file', file.path, here) }}
-</details>
+</section>
 {% endblock %}

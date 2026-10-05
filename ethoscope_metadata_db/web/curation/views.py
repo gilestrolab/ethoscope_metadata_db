@@ -138,7 +138,7 @@ def all_people(conn: sqlite3.Connection, kind: str | None = None) -> list[dict[s
     people = []
     where, params = ("WHERE kind = ?", (kind,)) if kind else ("", ())
     for person in conn.execute(
-        f"SELECT * FROM cur.person {where} ORDER BY name", params
+        f"SELECT * FROM cur.person {where} ORDER BY active DESC, name", params
     ).fetchall():
         aliases = conn.execute(
             "SELECT kind, value FROM cur.person_alias WHERE person_id = ? ORDER BY kind, value",
