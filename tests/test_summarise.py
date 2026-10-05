@@ -48,11 +48,17 @@ class TestSummarise:
     def test_rebuild_replaces_tables(self, matched):
         summarise.summarise(matched)
         counts = summarise.summarise(matched)
-        assert counts == {"db_summary": 6, "file_summary": 7, "genotype_summary": 3}
+        assert counts == {
+            "db_summary": 6,
+            "file_summary": 7,
+            "genotype_summary": 3,
+            "claim_summary": 5,
+        }
         indexes = {
             r[0] for r in matched.execute("SELECT name FROM sqlite_master WHERE type='index'")
         }
-        assert {"db_summary_id", "db_summary_category", "file_summary_tag"} <= indexes
+        assert {"db_summary_key", "db_summary_category", "file_summary_tag"} <= indexes
+        assert {"claim_summary_key", "claim_summary_file_id"} <= indexes
         assert matched.execute("SELECT value FROM schema_info WHERE key='summarised_at'").fetchone()
 
     def test_empty_census(self, census):
@@ -60,7 +66,29 @@ class TestSummarise:
             "db_summary": 0,
             "file_summary": 0,
             "genotype_summary": 0,
+            "claim_summary": 0,
         }
+
+    def test_claim_summary_pairs(self, matched):
+        summarise.summarise(matched)
+
+        def pairs_of(sql, params=()):
+            return {tuple(r) for r in matched.execute(sql, params)}
+
+        pairs = pairs_of("SELECT db_id, file_id FROM claim_summary")
+        expected = pairs_of(
+            "SELECT m.db_file_id, r.meta_file_id FROM match m "
+            "JOIN meta_row r ON r.id = m.meta_row_id "
+            f"WHERE m.status IN ({', '.join('?' * len(report.CLAIM_STATUSES))})",
+            list(report.CLAIM_STATUSES),
+        )
+        assert pairs == expected and len(pairs) == 5
+        # Passed-over runs (an earlier run of the day, another copy) are not claims.
+        passed_over = pairs_of(
+            "SELECT m.db_file_id, r.meta_file_id FROM match m "
+            "JOIN meta_row r ON r.id = m.meta_row_id WHERE m.status IN ('superseded', 'duplicate')"
+        )
+        assert passed_over and not pairs & passed_over
 
     def test_tag_for(self):
         tags = [("/a", "a"), ("/a/b/", "b")]

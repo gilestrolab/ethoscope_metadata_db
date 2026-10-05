@@ -6,6 +6,8 @@ import sqlite3
 from collections import defaultdict
 from typing import Any, Iterable
 
+from .suggest import METADATA_OUTCOMES
+
 
 def labels_by_id(
     conn: sqlite3.Connection, link: str, ids: Iterable[int]
@@ -29,13 +31,19 @@ def labels_by_id(
 def people_by_id(
     conn: sqlite3.Connection, link: str, ids: Iterable[int]
 ) -> dict[int, list[sqlite3.Row]]:
-    """People of each listed run or file (``link``: ``run_person`` or ``file_person``)."""
+    """Owner of each listed run or file (``link``: ``run_person`` or ``file_person``).
+
+    Each row has ``via``: how the owner was found (``experimenter``, ``metadata``
+    or, for files, ``home``).
+    """
     ids = list(ids)
     out: dict[int, list[sqlite3.Row]] = defaultdict(list)
     if not ids:
         return out
+    via = "m.via" if link == "run_person" else "'home'"  # files are only ever owned via home
     rows = conn.execute(
-        f"SELECT m.target_id, p.id, p.name FROM cur.{link} m JOIN cur.person p ON p.id = m.person_id "
+        f"SELECT m.target_id, p.id, p.name, {via} AS via FROM cur.{link} m "
+        "JOIN cur.person p ON p.id = m.person_id "
         f"WHERE m.target_id IN ({', '.join('?' * len(ids))}) ORDER BY p.name",
         ids,
     )
@@ -104,10 +112,34 @@ def label_detail(conn: sqlite3.Connection, label_id: int) -> dict[str, Any] | No
     }
 
 
-def all_people(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    """Every person with their aliases and run counts."""
+def coverage(conn: sqlite3.Connection) -> dict[str, Any]:
+    """How many runs and metadata files have an unambiguous owner."""
+    runs = conn.execute("SELECT count(*) FROM db_summary").fetchone()[0]
+    via = dict(conn.execute("SELECT via, count(*) FROM cur.run_person GROUP BY via").fetchall())
+    outcomes = ", ".join("?" * len(METADATA_OUTCOMES))
+    files = conn.execute(
+        f"SELECT count(*) FROM file_summary WHERE outcome IN ({outcomes})", METADATA_OUTCOMES
+    ).fetchone()[0]
+    owned_files = conn.execute("SELECT count(*) FROM cur.file_person").fetchone()[0]
+    owned_runs = sum(via.values())
+    return {
+        "runs": runs,
+        "owned_runs": owned_runs,
+        "via": via,
+        "files": files,
+        "owned_files": owned_files,
+        "runs_pct": round(100 * owned_runs / runs) if runs else 0,
+        "files_pct": round(100 * owned_files / files) if files else 0,
+    }
+
+
+def all_people(conn: sqlite3.Connection, kind: str | None = None) -> list[dict[str, Any]]:
+    """Every person (or every entry of one ``kind``) with their aliases and run counts."""
     people = []
-    for person in conn.execute("SELECT * FROM cur.person ORDER BY name").fetchall():
+    where, params = ("WHERE kind = ?", (kind,)) if kind else ("", ())
+    for person in conn.execute(
+        f"SELECT * FROM cur.person {where} ORDER BY name", params
+    ).fetchall():
         aliases = conn.execute(
             "SELECT kind, value FROM cur.person_alias WHERE person_id = ? ORDER BY kind, value",
             (person["id"],),

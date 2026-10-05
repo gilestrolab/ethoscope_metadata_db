@@ -1,63 +1,59 @@
 {% extends "base.html" %}
+{% from "_macros.html" import alias_chip, review_group %}
 {% block title %}People · Ethoscope census{% endblock %}
 {% block content %}
 <h1>People</h1>
-<p class="muted">A person gathers the names they appear under: their home folders and the experimenter names typed on the nodes.</p>
+<p class="summary"><strong>{{ coverage.owned_runs|int }}</strong> of {{ coverage.runs|int }} runs have an owner ({{ coverage.runs_pct }}%)
+  · <strong>{{ coverage.owned_files|int }}</strong> of {{ coverage.files|int }} metadata files ({{ coverage.files_pct }}%)
+  {% if coverage.owned_runs %}<span class="muted">· runs owned through the name typed on the node: {{ coverage.via.get('experimenter', 0)|int }}, through their metadata files: {{ coverage.via.get('metadata', 0)|int }}</span>{% endif %}</p>
+<details class="help"><summary class="muted">How owners are found</summary>
+  <p class="muted">Each run has at most one owner: the person whose experimenter name was typed on the node, otherwise the one person who owns the metadata files that describe it. A metadata file belongs to the person whose home folder it is in. Names marked as not a person (guest accounts, shared or project folders) own nothing, and a run described by files of two different people is left without an owner.</p></details>
+
+<datalist id="roles">{% for r in roles %}<option value="{{ r }}">{% endfor %}</datalist>
+{% set several = [] %}{% set single = [] %}{% for g in groups %}{% if g.members|length > 1 %}{% set _ = several.append(g) %}{% else %}{% set _ = single.append(g) %}{% endif %}{% endfor %}
+<details class="card section" open><summary><h2>To review: names that probably belong together ({{ several|length }})</h2></summary>
+  <p class="muted">Experimenter names and home folders that differ only in case or punctuation, or follow the first.last ↔ flast pattern. Untick anything that does not belong, then create the person, add the names to someone already listed, or mark them as not a person.</p>
+  {% for g in several %}{{ review_group(g, people, shared) }}{% else %}<p class="muted">Nothing left to review.</p>{% endfor %}
+</details>
+<details class="card section" {{ 'open' if not several and single }}><summary><h2>To review: other names ({{ single|length }})</h2></summary>
+  {% for g in single %}{{ review_group(g, people, shared) }}{% else %}<p class="muted">Nothing left to review.</p>{% endfor %}
+</details>
+
 <section class="card scroll">
+  <h2>People ({{ people|length }})</h2>
   <table>
-    <thead><tr><th>Name</th><th>Also known as</th><th class="num">Runs</th><th class="num">Orphans</th><th class="num">Metadata files</th></tr></thead>
+    <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Names they appear under</th><th class="num">Runs owned</th><th class="num">Orphans</th><th class="num">Metadata files</th></tr></thead>
     <tbody>
     {% for p in people %}
       <tr><td><a class="who" href="/people/{{ p.person.id }}">{{ p.person.name }}</a></td>
-        <td>{% for a in p.aliases %}<span class="chip small" title="{{ a.kind }}">{{ a.value }} <span class="muted">{{ 'node' if a.kind == 'experimenter' else a.kind }}</span></span>{% endfor %}</td>
+        <td class="mono">{{ p.person.username or '' }}</td><td>{{ p.person.role or '' }}</td>
+        <td>{% for a in p.aliases %}{{ alias_chip(a) }}{% endfor %}</td>
         <td class="num"><a href="/runs?person={{ p.person.name|urlencode }}">{{ p.n_runs|int }}</a></td>
         <td class="num"><a href="/runs?person={{ p.person.name|urlencode }}&category=orphan">{{ p.counts.get('orphan', 0)|int }}</a></td>
         <td class="num"><a href="/files?person={{ p.person.name|urlencode }}">{{ p.n_files|int }}</a></td></tr>
     {% else %}
-      <tr><td colspan="5" class="muted">No people yet: start from the suggestions below.</td></tr>
+      <tr><td colspan="7" class="muted">No people yet: start from the names to review above.</td></tr>
     {% endfor %}
     </tbody>
   </table>
 </section>
 
-{% set several = [] %}{% set single = [] %}{% for g in groups %}{% if g.members|length > 1 %}{% set _ = several.append(g) %}{% else %}{% set _ = single.append(g) %}{% endif %}{% endfor %}
-<details class="card section" open><summary><h2>Names that probably belong together ({{ several|length }})</h2></summary>
-  <p class="muted">Experimenter names and home folders that differ only in case or punctuation, or that follow the first.last ↔ flast pattern. Untick anything that does not belong.</p>
-  {% for g in several %}
-  <form method="post" action="/people" class="group">
-    <div class="members">{% for m in g.members %}
-      <label class="member"><input type="checkbox" name="alias" value="{{ m.kind }}:{{ m.value }}" {{ 'checked' if not m.person }}>
-        <strong>{{ m.value }}</strong> <span class="muted">{{ m.kind }} · {{ m.n|int }} {{ m.unit }}{% if m.person %} · already {{ m.person }}{% endif %}</span></label>
-    {% endfor %}</div>
-    <div class="actions">
-      <input type="text" name="name" value="{{ g.suggested }}" aria-label="Person's name">
-      <button type="submit">Create person</button>
-      {% if people %}<span class="muted">or add them to</span>
-      <select name="person_id" aria-label="Existing person"><option value="">choose…</option>{% for p in people %}<option value="{{ p.person.id }}" {{ 'selected' if p.person.name in g.people }}>{{ p.person.name }}</option>{% endfor %}</select>
-      <button type="submit" formaction="/people/join">Add</button>{% endif %}
-    </div>
-  </form>
-  {% else %}<p class="muted">No groups left to review.</p>{% endfor %}
-</details>
-<details class="card section"><summary><h2>Other names not yet assigned ({{ single|length }})</h2></summary>
-  {% for g in single %}
-  <form method="post" action="/people" class="group">
-    <div class="members">{% for m in g.members %}
-      <label class="member"><input type="checkbox" name="alias" value="{{ m.kind }}:{{ m.value }}" {{ 'checked' if not m.person }}>
-        <strong>{{ m.value }}</strong> <span class="muted">{{ m.kind }} · {{ m.n|int }} {{ m.unit }}{% if m.person %} · already {{ m.person }}{% endif %}</span></label>
-    {% endfor %}</div>
-    <div class="actions">
-      <input type="text" name="name" value="{{ g.suggested }}" aria-label="Person's name">
-      <button type="submit">Create person</button>
-      {% if people %}<span class="muted">or add them to</span>
-      <select name="person_id" aria-label="Existing person"><option value="">choose…</option>{% for p in people %}<option value="{{ p.person.id }}" {{ 'selected' if p.person.name in g.people }}>{{ p.person.name }}</option>{% endfor %}</select>
-      <button type="submit" formaction="/people/join">Add</button>{% endif %}
-    </div>
-  </form>
-  {% endfor %}
+<details class="card section"><summary><h2>Not people ({{ shared|length }})</h2></summary>
+  <p class="muted">Names reviewed and found not to be a person. Their runs and files have no owner unless the experimenter name says otherwise.</p>
+  <table>
+    <tbody>
+    {% for p in shared %}
+      <tr><td><a href="/people/{{ p.person.id }}">{{ p.person.name }}</a></td><td>{% for a in p.aliases %}{{ alias_chip(a) }}{% endfor %}</td></tr>
+    {% else %}<tr><td class="muted">None yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
 </details>
 
 <details class="card section"><summary><h2>New person</h2></summary>
-  <form method="post" action="/people" class="inline-form"><input type="text" name="name" placeholder="Name" required aria-label="Name"><button type="submit">Create</button></form>
+  <form method="post" action="/people" class="inline-form">
+    <input type="text" name="name" placeholder="Full name" required aria-label="Full name">
+    <input type="text" name="username" placeholder="username" aria-label="Username" size="10">
+    <input type="text" name="role" list="roles" placeholder="role" aria-label="Role in the lab" size="11">
+    <button type="submit">Create</button></form>
 </details>
 {% endblock %}

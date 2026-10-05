@@ -1,5 +1,6 @@
 import json
 import os
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -157,7 +158,8 @@ class TestMembership:
         assert membership.ensure_fresh(census, cur) is True
         assert membership.ensure_fresh(census, cur) is False  # nothing changed
         assert census.execute("SELECT count(*) FROM cur.run_person").fetchone()[0] == 4
-        assert census.execute("SELECT count(*) FROM cur.file_person").fetchone()[0] == 4
+        # alice's one metadata sheet; her other spreadsheets are not metadata and have no owner
+        assert census.execute("SELECT count(*) FROM cur.file_person").fetchone()[0] == 1
 
 
 class TestSuggestions:
@@ -267,7 +269,7 @@ class TestCurationPages:
 
     def test_people_from_suggestions(self, client):
         page = client.get("/people", headers=ORIGIN).text
-        assert "Names that probably belong together" in page and "alice" in page
+        assert "names that probably belong together" in page and "alice" in page
         client.post(
             "/people",
             data={"name": "Alice A", "alias": ["experimenter:alice", "home:alice"]},
@@ -317,7 +319,7 @@ class TestPeopleFormRegression:
         client.post("/people", data={"name": "Someone"}, headers=ORIGIN)  # makes the picker appear
         page = client.get("/people", headers=ORIGIN).text
         assert 'name="person_id"' in page
-        assert 'name="person_id" aria-label="Existing person" required' not in page
+        assert not re.search(r'<select name="person_id"[^>]*required', page)
 
     def test_add_without_a_person_is_a_friendly_error(self, client):
         response = client.post(

@@ -1,4 +1,9 @@
-"""People: who ran what, merging the names they appear under (homes, experimenter strings)."""
+"""People: who owns what, mapping the names runs and files appear under to real people.
+
+The page is a review queue: each name found in the census (experimenter
+strings typed on the nodes, home folders) is either given to a real person or
+marked as not a person (guest accounts, shared or project folders).
+"""
 
 from __future__ import annotations
 
@@ -29,29 +34,48 @@ def people(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     return render(
         request,
         "people.html",
-        people=views.all_people(conn),
+        people=views.all_people(conn, "person"),
+        shared=views.all_people(conn, "shared"),
         groups=suggest.alias_groups(conn),
+        coverage=views.coverage(conn),
+        roles=actions.ROLES,
     )
 
 
 @router.post("/people")
 def create(
     request: Request,
-    name: str = Form(...),
+    name: str = Form(""),
+    suggested: str = Form(""),
     alias: list[str] = Form(default=[]),
+    kind: str = Form("person"),
+    username: str = Form(""),
+    role: str = Form(""),
     cur: sqlite3.Connection = Depends(get_curation),
 ):
-    """Create a person from a suggested alias group (or from scratch)."""
+    """Create a person, or a not-a-person entry, from a suggested name group (or from scratch)."""
     try:
-        person_id = actions.create_person(cur, current_user(request), name, _parse_aliases(alias))
+        if kind != "person":
+            username = role = ""  # Reason: a guest account or shared folder has no lab role
+            name = name.strip() or suggested
+        elif not name.strip():
+            raise CurationError("type the person's full name, e.g. Ada Lovelace")
+        person_id = actions.create_person(
+            cur,
+            current_user(request),
+            name,
+            _parse_aliases(alias),
+            kind=kind,
+            username=username,
+            role=role,
+        )
     except CurationError as exc:
         return back_to("/people", error=str(exc))
     refresh_membership(request, cur)
-    return (
-        back_to("/people", notice=f"Added {name.strip()!r}")
-        if alias
-        else back_to(f"/people/{person_id}")
-    )
+    if not alias:
+        return back_to(f"/people/{person_id}")
+    what = "a person" if kind == "person" else "not a person"
+    return back_to("/people", notice=f"{name.strip()!r} recorded as {what}")
 
 
 @router.post("/people/join")
@@ -83,7 +107,15 @@ def person(request: Request, person_id: int, conn: sqlite3.Connection = Depends(
         detail["monthly"], link=lambda m: f"/runs?person={name}&month={m}", height=180
     )
     others = [p["person"] for p in views.all_people(conn) if p["person"]["id"] != person_id]
-    return render(request, "person.html", **detail, chart=chart, others=others, fold=charts.fold)
+    return render(
+        request,
+        "person.html",
+        **detail,
+        chart=chart,
+        others=others,
+        fold=charts.fold,
+        roles=actions.ROLES,
+    )
 
 
 @router.post("/people/{person_id}/alias")
@@ -115,18 +147,36 @@ def remove_alias(
     return back_to(f"/people/{person_id}", notice="Alias removed")
 
 
-@router.post("/people/{person_id}/rename")
-def rename(
+@router.post("/people/{person_id}/edit")
+def edit(
     request: Request,
     person_id: int,
     name: str = Form(...),
+    username: str = Form(""),
+    role: str = Form(""),
+    cur: sqlite3.Connection = Depends(get_curation),
+):
+    """Set the full name, username and role."""
+    try:
+        actions.edit_person(cur, current_user(request), person_id, name, username, role)
+    except CurationError as exc:
+        return back_to(f"/people/{person_id}", error=str(exc))
+    return back_to(f"/people/{person_id}", notice="Saved")
+
+
+@router.post("/people/{person_id}/kind")
+def set_kind(
+    request: Request,
+    person_id: int,
+    kind: str = Form(...),
     cur: sqlite3.Connection = Depends(get_curation),
 ):
     try:
-        actions.rename_person(cur, current_user(request), person_id, name)
+        actions.set_person_kind(cur, current_user(request), person_id, kind)
     except CurationError as exc:
         return back_to(f"/people/{person_id}", error=str(exc))
-    return back_to(f"/people/{person_id}", notice="Renamed")
+    refresh_membership(request, cur)
+    return back_to(f"/people/{person_id}", notice="Updated")
 
 
 @router.post("/people/{person_id}/merge")

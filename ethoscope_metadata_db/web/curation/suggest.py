@@ -27,7 +27,7 @@ def initial_key(value: str) -> str | None:
     return parts[0][0] + "".join(parts[1:])
 
 
-def alias_groups(conn: sqlite3.Connection, limit: int = 200) -> list[dict[str, Any]]:
+def alias_groups(conn: sqlite3.Connection, limit: int = 1000) -> list[dict[str, Any]]:
     """Experimenter strings and home names grouped when they probably name one person.
 
     A group joins values with the same :func:`alias_key`, and a ``first.last``
@@ -38,9 +38,10 @@ def alias_groups(conn: sqlite3.Connection, limit: int = 200) -> list[dict[str, A
         conn: Census connection with the curation file attached as ``cur``.
     """
     assigned = {
-        (r["kind"], r["value"]): r["name"]
+        (r["kind"], r["value"]): (r["name"], r["person_kind"])
         for r in conn.execute(
-            "SELECT a.kind, a.value, p.name FROM cur.person_alias a JOIN cur.person p ON p.id = a.person_id"
+            "SELECT a.kind, a.value, p.name, p.kind AS person_kind FROM cur.person_alias a "
+            "JOIN cur.person p ON p.id = a.person_id"
         )
     }
     items: list[dict[str, Any]] = []
@@ -73,14 +74,18 @@ def alias_groups(conn: sqlite3.Connection, limit: int = 200) -> list[dict[str, A
                 by_key[key] = i
     groups: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for i, item in enumerate(items):
-        item["person"] = assigned.get((item["kind"], item["value"]))
+        item["person"], item["person_kind"] = assigned.get(
+            (item["kind"], item["value"]), (None, None)
+        )
         groups[find(i)].append(item)
     out = []
     for members in groups.values():
         if all(m["person"] for m in members):
             continue
         members.sort(key=lambda m: -m["n"])
-        people = sorted({m["person"] for m in members if m["person"]})
+        # Reason: suggest joining a real person only; a name already marked
+        # "not a person" says nothing about who the rest of the group is.
+        people = sorted({m["person"] for m in members if m["person_kind"] == "person"})
         out.append(
             {
                 "members": members,

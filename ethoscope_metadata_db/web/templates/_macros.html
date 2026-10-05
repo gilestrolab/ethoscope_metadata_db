@@ -7,7 +7,12 @@
 {%- endmacro %}
 
 {% macro person_chips(people) -%}
-{% for p in people %}<a class="who" href="/people/{{ p.id }}">{{ p.name }}</a>{% endfor %}
+{% set via_text = {'experimenter': 'owner: the experimenter name typed on the node', 'metadata': 'owner: the metadata files that claim it', 'home': 'owner: the home folder it is in'} %}
+{% for p in people %}<a class="who" href="/people/{{ p.id }}"{% if p.via %} title="{{ via_text.get(p.via, p.via) }}"{% endif %}>{{ p.name }}</a>{% endfor %}
+{%- endmacro %}
+
+{% macro alias_chip(a) -%}
+<a class="chip small" href="{{ '/runs?experimenter=' if a.kind == 'experimenter' else '/files?home=' }}{{ a.value|urlencode }}" title="{{ 'typed on the node' if a.kind == 'experimenter' else a.kind }}">{{ a.value }} <span class="muted">{{ 'node' if a.kind == 'experimenter' else a.kind }}</span></a>
 {%- endmacro %}
 
 {% macro facet_block(facet, values, selection, path, target) -%}
@@ -82,5 +87,29 @@
   <input type="hidden" name="target_type" value="{{ target_type }}"><input type="hidden" name="target" value="{{ target }}"><input type="hidden" name="back" value="{{ back }}">
   <textarea name="text" rows="2" placeholder="Add a note…" aria-label="Note"></textarea>
   <button type="submit">Add note</button>
+</form>
+{%- endmacro %}
+
+{% macro review_group(g, people, shared) -%}
+<form method="post" action="/people" class="group">
+  <div class="members">{% for m in g.members %}
+    <label class="member"><input type="checkbox" name="alias" value="{{ m.kind }}:{{ m.value }}" {{ 'checked' if not m.person }}>
+      <strong>{{ m.value }}</strong> <span class="muted">{{ 'node' if m.kind == 'experimenter' else m.kind }} · {{ m.n|int }} {{ m.unit if m.n != 1 else m.unit[:-1] }}{% if m.person %} · already {{ m.person }}{% endif %}</span></label>
+  {% endfor %}</div>
+  {% set homes = g.members|selectattr('kind', 'equalto', 'home')|rejectattr('person')|map(attribute='value')|list %}
+  <div class="actions">
+    <input type="hidden" name="suggested" value="{{ g.suggested }}">
+    <input type="text" name="name" placeholder="Full name" aria-label="Full name" size="18">
+    <input type="text" name="username" value="{{ homes[0] if homes }}" placeholder="username" aria-label="Username" size="10">
+    <input type="text" name="role" list="roles" placeholder="role" aria-label="Role in the lab" size="11">
+    <button type="submit" name="kind" value="person">Create person</button>
+    <button type="submit" name="kind" value="shared" title="A guest account, a shared or project folder, a team: these names will own nothing (filed as {{ g.suggested }} unless you type a name)">Not a person</button>
+    {% if people or shared %}<span class="muted">or add to</span>
+    <select name="person_id" aria-label="Existing entry"><option value="">choose…</option>
+      {% if people %}<optgroup label="People">{% for p in people %}<option value="{{ p.person.id }}" {{ 'selected' if p.person.name in g.people }}>{{ p.person.name }}</option>{% endfor %}</optgroup>{% endif %}
+      {% if shared %}<optgroup label="Not people">{% for p in shared %}<option value="{{ p.person.id }}">{{ p.person.name }}</option>{% endfor %}</optgroup>{% endif %}
+    </select>
+    <button type="submit" formaction="/people/join">Add</button>{% endif %}
+  </div>
 </form>
 {%- endmacro %}

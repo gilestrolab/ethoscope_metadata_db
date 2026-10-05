@@ -75,7 +75,7 @@ header.top {
   display: flex; gap: 1.2rem; align-items: center; flex-wrap: wrap;
 }
 header.top .brand { font-weight: 600; color: var(--text-primary); }
-header.top nav { display: flex; gap: 1rem; }
+header.top nav { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; }
 header.top nav a.on { color: var(--text-primary); font-weight: 600; }
 header.top form { margin-left: auto; display: flex; gap: 0.4rem; }
 header.top .user { color: var(--text-muted); font-size: 0.85em; }
@@ -194,7 +194,7 @@ details.section[open] > summary { margin-bottom: 0.6rem; }
 details.menu { position: relative; }
 details.menu > summary { list-style: none; cursor: pointer; border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.7rem; background: var(--surface-2); }
 details.menu > summary::-webkit-details-marker { display: none; }
-details.menu .menu-body { position: absolute; z-index: 5; top: 2.2rem; left: 0; min-width: 18rem; background: var(--surface-1); border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem; display: grid; gap: 0.4rem; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12); }
+details.menu .menu-body { position: absolute; z-index: 5; top: 2.2rem; left: 0; min-width: min(18rem, calc(100vw - 2rem)); background: var(--surface-1); border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem; display: grid; gap: 0.4rem; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12); }
 table .opt { display: none; }
 table.show-all .opt { display: table-cell; }
 .facets details.more summary, .facets details.more-filters summary { font-size: 0.85em; color: var(--text-muted); padding: 0.1rem 0.3rem; }
@@ -204,3 +204,13 @@ table.show-all .opt { display: table-cell; }
 td.narrow, th.narrow { width: 1%; white-space: nowrap; }
 td.small { font-size: 0.88em; }
 .kv { display: inline-block; margin-right: 0.7rem; }
+details.help { margin: -0.25rem 0 1rem; }
+details.help summary { cursor: pointer; width: max-content; }
+form.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.6rem 1rem; align-items: end; }
+form.fields label { display: grid; gap: 0.2rem; color: var(--text-secondary); font-size: 0.9em; }
+form.fields input { width: 100%; box-sizing: border-box; }
+form.fields button { justify-self: start; }
+@media (max-width: 860px) {
+  /* menus open in place on phones rather than floating past the screen edge */
+  details.menu .menu-body { position: static; min-width: 0; margin-top: 0.4rem; box-shadow: none; }
+}

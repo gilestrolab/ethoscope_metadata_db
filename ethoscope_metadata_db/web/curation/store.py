@@ -7,6 +7,11 @@ typed on the nodes); notes; and an audit log. Labels and aliases are keyed by
 path or string, never by census id, because census ids change when files are
 re-registered: the census can be rebuilt without losing any curation.
 
+A person has a full ``name``, an optional lab ``username`` (unique) and
+``role``. Their ``kind`` is ``person`` (a real, unambiguous person: only these
+own runs and files) or ``shared`` (a name reviewed and found not to be a
+person: guest accounts, shared or project folders, teams).
+
 Every edit goes through :class:`Change`, which records the before and after
 of each row it touches, so :func:`undo` can reverse any logged action.
 Derived membership tables (which census ids a label or person covers) live
@@ -39,8 +44,13 @@ CREATE TABLE IF NOT EXISTS label_link (
 CREATE TABLE IF NOT EXISTS person (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    note TEXT
+    note TEXT,
+    kind TEXT NOT NULL DEFAULT 'person',
+    username TEXT,
+    role TEXT
 );
+CREATE UNIQUE INDEX IF NOT EXISTS person_username ON person (username COLLATE NOCASE)
+    WHERE username IS NOT NULL;
 CREATE TABLE IF NOT EXISTS person_alias (
     kind TEXT NOT NULL CHECK (kind IN ('experimenter', 'home', 'other')),
     value TEXT NOT NULL,
@@ -75,7 +85,7 @@ CREATE TABLE IF NOT EXISTS file_label (
     PRIMARY KEY (target_id, label_id)
 );
 CREATE TABLE IF NOT EXISTS run_person (
-    target_id INTEGER NOT NULL, person_id INTEGER NOT NULL,
+    target_id INTEGER NOT NULL, person_id INTEGER NOT NULL, via TEXT,
     PRIMARY KEY (target_id, person_id)
 );
 CREATE TABLE IF NOT EXISTS file_person (
@@ -117,8 +127,30 @@ def connect(path: str | os.PathLike[str]) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA foreign_keys = ON")
+    _upgrade(conn)
     conn.executescript(SCHEMA)
     return conn
+
+
+def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _upgrade(conn: sqlite3.Connection) -> None:
+    """Bring curation files written by earlier versions up to the current schema."""
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if "person" in tables:
+        columns = _columns(conn, "person")
+        for column, definition in (
+            ("kind", "TEXT NOT NULL DEFAULT 'person'"),
+            ("username", "TEXT"),
+            ("role", "TEXT"),
+        ):
+            if column not in columns:
+                conn.execute(f"ALTER TABLE person ADD COLUMN {column} {definition}")
+    if "run_person" in tables and "via" not in _columns(conn, "run_person"):
+        conn.execute("DROP TABLE run_person")  # derived: rebuilt by membership.rebuild
+        conn.execute("DELETE FROM meta WHERE key = 'built_for'")
 
 
 def _where(key: dict[str, Any]) -> tuple[str, list]:

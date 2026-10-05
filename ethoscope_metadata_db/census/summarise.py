@@ -10,6 +10,7 @@ rebuilt in full each time:
 ``file_summary``  one row per metadata sheet: provenance, location tag, row
                   outcomes by status, date range and databases claimed.
 ``genotype_summary`` each distinct raw genotype string, with row and file counts.
+``claim_summary`` distinct (run, metadata sheet) pairs where the sheet claims the run.
 
 Each table is written under a temporary name and swapped in within one
 transaction, so readers never see it half-built.
@@ -174,8 +175,23 @@ def genotype_summary(conn: sqlite3.Connection) -> pd.DataFrame:
     return frame
 
 
+def claim_summary(conn: sqlite3.Connection) -> pd.DataFrame:
+    """Distinct (run, metadata sheet) pairs where the sheet claims the run."""
+    return pd.read_sql_query(
+        "SELECT DISTINCT m.db_file_id AS db_id, r.meta_file_id AS file_id FROM match m "
+        "JOIN meta_row r ON r.id = m.meta_row_id "
+        f"WHERE m.status IN ({', '.join('?' * len(report.CLAIM_STATUSES))})",
+        conn,
+        params=list(report.CLAIM_STATUSES),
+    )
+
+
 def _replace_table(
-    conn: sqlite3.Connection, name: str, frame: pd.DataFrame, indexes: Iterable[str]
+    conn: sqlite3.Connection,
+    name: str,
+    frame: pd.DataFrame,
+    indexes: Iterable[str],
+    key: tuple[str, ...] = ("id",),
 ) -> None:
     staging = f"{name}_new"
     conn.execute(f"DROP TABLE IF EXISTS {staging}")
@@ -183,7 +199,7 @@ def _replace_table(
     with conn:
         conn.execute(f"DROP TABLE IF EXISTS {name}")
         conn.execute(f"ALTER TABLE {staging} RENAME TO {name}")
-        conn.execute(f"CREATE UNIQUE INDEX {name}_id ON {name} (id)")
+        conn.execute(f"CREATE UNIQUE INDEX {name}_key ON {name} ({', '.join(key)})")
         for column in indexes:
             conn.execute(f"CREATE INDEX {name}_{column} ON {name} ({column})")
 
@@ -207,12 +223,19 @@ def summarise(
     dbs = db_summary(conn, timezone)
     files = file_summary(conn, tags)
     genotypes = genotype_summary(conn)
+    claims = claim_summary(conn)
     _replace_table(conn, "db_summary", dbs, DB_INDEXES)
     _replace_table(conn, "file_summary", files, FILE_INDEXES)
     _replace_table(conn, "genotype_summary", genotypes, ("genotype",))
+    _replace_table(conn, "claim_summary", claims, ("file_id",), key=("db_id", "file_id"))
     with conn:
         conn.execute(
             "INSERT OR REPLACE INTO schema_info (key, value) VALUES ('summarised_at', ?)",
             (dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),),
         )
-    return {"db_summary": len(dbs), "file_summary": len(files), "genotype_summary": len(genotypes)}
+    return {
+        "db_summary": len(dbs),
+        "file_summary": len(files),
+        "genotype_summary": len(genotypes),
+        "claim_summary": len(claims),
+    }

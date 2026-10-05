@@ -10,8 +10,20 @@ from .store import Change, CurationError, now
 
 LABEL_KINDS = ("tag", "project")
 ALIAS_KINDS = ("experimenter", "home", "other")
+PERSON_KINDS = ("person", "shared")  # shared: reviewed, not a person (owns nothing)
 TARGET_TYPES = ("run", "file", "folder")
 MAX_NAME = 120
+# Offered as choices for a person's role; any other text is accepted too.
+ROLES = (
+    "PI",
+    "postdoc",
+    "PhD student",
+    "MSc/MRes student",
+    "undergraduate",
+    "technician",
+    "visitor",
+)
+USERNAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 
 
 def clean_name(name: str) -> str:
@@ -178,18 +190,56 @@ def delete_label(conn: sqlite3.Connection, who: str | None, label_id: int) -> No
 # ---- people -------------------------------------------------------------------------------
 
 
+def _person_details(
+    conn: sqlite3.Connection, person_id: int | None, username: str, role: str
+) -> dict[str, str | None]:
+    """Validate a username (unique, account-like) and a role (free text); blank means none."""
+    username = (username or "").strip()
+    if username:
+        if not USERNAME_RE.fullmatch(username):
+            raise CurationError("a username is letters, digits, dots, dashes or underscores")
+        clash = conn.execute(
+            "SELECT name FROM person WHERE username = ? COLLATE NOCASE AND id IS NOT ?",
+            (username, person_id),
+        ).fetchone()
+        if clash:
+            raise CurationError(f"the username {username!r} already belongs to {clash['name']!r}")
+    role = re.sub(r"\s+", " ", (role or "").strip())
+    if len(role) > MAX_NAME:
+        raise CurationError(f"a role is at most {MAX_NAME} characters")
+    return {"username": username or None, "role": role or None}
+
+
 def create_person(
-    conn: sqlite3.Connection, who: str | None, name: str, aliases: Iterable[tuple[str, str]] = ()
+    conn: sqlite3.Connection,
+    who: str | None,
+    name: str,
+    aliases: Iterable[tuple[str, str]] = (),
+    kind: str = "person",
+    username: str = "",
+    role: str = "",
 ) -> int:
-    """Create a person, optionally taking over some aliases (moved from whoever had them)."""
+    """Create a person (or a ``shared`` not-a-person entry), taking over some aliases.
+
+    Args:
+        name: Full name, e.g. ``Ada Lovelace``.
+        aliases: ``(kind, value)`` names the census knows them by; any already
+            given to someone else move to the new entry.
+        username: Lab account name (unique), e.g. ``alovelace``.
+        role: Role in the lab (see :data:`ROLES`; free text).
+    """
     name = clean_name(name)
+    if kind not in PERSON_KINDS:
+        raise CurationError(f"kind must be one of {', '.join(PERSON_KINDS)}")
     if conn.execute("SELECT 1 FROM person WHERE name = ?", (name,)).fetchone():
-        raise CurationError(f"a person called {name!r} already exists: add aliases to them instead")
+        raise CurationError(f"{name!r} already exists: add these names to it instead")
+    details = _person_details(conn, None, username, role)
     aliases = list(aliases)
+    what = "person" if kind == "person" else "not-a-person entry"
     with Change(
-        conn, who, "create person", f"created person {name!r} ({len(aliases)} alias(es))"
+        conn, who, "create person", f"created {what} {name!r} ({len(aliases)} alias(es))"
     ) as change:
-        person_id = int(change.insert("person", {"name": name})["id"])
+        person_id = int(change.insert("person", {"name": name, "kind": kind, **details})["id"])
         for kind, value in aliases:
             _set_alias(conn, change, person_id, kind, value)
     return person_id
@@ -249,15 +299,35 @@ def merge_people(conn: sqlite3.Connection, who: str | None, source_id: int, targ
         change.delete("person", {"id": source_id})
 
 
-def rename_person(conn: sqlite3.Connection, who: str | None, person_id: int, name: str) -> None:
+def set_person_kind(conn: sqlite3.Connection, who: str | None, person_id: int, kind: str) -> None:
+    """Mark an entry as a real person or as shared (not a person, owns nothing)."""
+    person = _person(conn, person_id)
+    if kind not in PERSON_KINDS:
+        raise CurationError(f"kind must be one of {', '.join(PERSON_KINDS)}")
+    label = "a person" if kind == "person" else "not a person"
+    with Change(conn, who, "person kind", f"marked {person['name']!r} as {label}") as change:
+        change.update("person", {"id": person_id}, {"kind": kind})
+
+
+def edit_person(
+    conn: sqlite3.Connection,
+    who: str | None,
+    person_id: int,
+    name: str,
+    username: str = "",
+    role: str = "",
+) -> None:
+    """Set a person's full name, username and role (blank username or role clears it)."""
     person = _person(conn, person_id)
     name = clean_name(name)
     if conn.execute(
         "SELECT 1 FROM person WHERE name = ? AND id != ?", (name, person_id)
     ).fetchone():
         raise CurationError(f"a person called {name!r} already exists: merge them instead")
-    with Change(conn, who, "rename person", f"renamed {person['name']!r} to {name!r}") as change:
-        change.update("person", {"id": person_id}, {"name": name})
+    values = {"name": name, **_person_details(conn, person_id, username, role)}
+    renamed = f" (now {name!r})" if name != person["name"] else ""
+    with Change(conn, who, "edit person", f"edited {person['name']!r}{renamed}") as change:
+        change.update("person", {"id": person_id}, values)
 
 
 def delete_person(conn: sqlite3.Connection, who: str | None, person_id: int) -> None:

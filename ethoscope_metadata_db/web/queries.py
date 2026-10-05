@@ -32,7 +32,7 @@ RUN_LABEL = LinkFacet(
 RUN_PERSON = LinkFacet(
     "person",
     "id",
-    "Person",
+    "Owner",
     limit=30,
     link="cur.run_person",
     entity="cur.person",
@@ -84,7 +84,7 @@ FILES = Table(
         LinkFacet(
             "person",
             "id",
-            "Person",
+            "Owner",
             limit=30,
             link="cur.file_person",
             entity="cur.person",
