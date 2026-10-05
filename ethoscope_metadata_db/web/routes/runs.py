@@ -10,6 +10,7 @@ from fastapi.responses import Response
 
 from .. import queries
 from ..app import get_db, render
+from ..curation import views
 from ..filters import PER_PAGE, Selection, facet_counts, fetch_page
 
 router = APIRouter()
@@ -36,6 +37,7 @@ def _csv(frame, filename: str) -> Response:
 def runs(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     selection = _selection(request)
     rows, total = fetch_page(conn, queries.RUNS, selection, LIST_COLUMNS)
+    ids = [r["id"] for r in rows]
     context = {
         "selection": selection,
         "table": queries.RUNS,
@@ -43,6 +45,10 @@ def runs(request: Request, conn: sqlite3.Connection = Depends(get_db)):
         "total": total,
         "pages": max(1, math.ceil(total / PER_PAGE)),
         "facets": facet_counts(conn, queries.RUNS, selection),
+        "row_labels": views.labels_by_id(conn, "run_label", ids),
+        "row_people": views.people_by_id(conn, "run_person", ids),
+        "all_labels": views.all_labels(conn),
+        "query": str(request.query_params),
     }
     partial = request.headers.get("HX-Request") == "true"
     return render(request, "_runs_results.html" if partial else "runs.html", **context)
@@ -65,4 +71,12 @@ def run(request: Request, db_id: int, conn: sqlite3.Connection = Depends(get_db)
     detail = queries.run_detail(conn, db_id)
     if detail is None:
         raise HTTPException(404, "No such database in the census")
-    return render(request, "run.html", **detail)
+    return render(
+        request,
+        "run.html",
+        **detail,
+        labels=views.labels_by_id(conn, "run_label", [db_id])[db_id],
+        people=views.people_by_id(conn, "run_person", [db_id])[db_id],
+        notes=views.notes(conn, "run", detail["run"]["path"]),
+        all_labels=views.all_labels(conn),
+    )

@@ -4,6 +4,8 @@ Run it with ``ethocensus-web`` (see :func:`main`). Settings come from the
 environment (or a ``.env`` file):
 
 ``ETHOCENSUS_DB``           the census SQLite file (opened read-only)
+``ETHOCENSUS_CURATION``     the curation SQLite file (labels, people, notes, audit;
+                            default ``curation.sqlite`` next to the census)
 ``ETHOCENSUS_USER_HEADER``  header carrying the logged-in user, set by the SSO
                             proxy (default ``X-Forwarded-Email``)
 ``ETHOCENSUS_REQUIRE_USER`` ``1`` (default): refuse requests without that header.
@@ -25,11 +27,13 @@ from pathlib import Path
 from typing import Iterator
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import charts
+from .curation import membership
+from .curation import store as curation_store
 from .filters import NONE
 
 HERE = Path(__file__).parent
@@ -42,6 +46,13 @@ class Settings:
     census_db: str
     user_header: str = "X-Forwarded-Email"
     require_user: bool = True
+    curation_db: str | None = None
+
+    @property
+    def curation_path(self) -> str:
+        return self.curation_db or os.path.join(
+            os.path.dirname(os.path.abspath(self.census_db)), "curation.sqlite"
+        )
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -56,6 +67,7 @@ class Settings:
             census_db=os.environ["ETHOCENSUS_DB"],
             user_header=os.environ.get("ETHOCENSUS_USER_HEADER", "X-Forwarded-Email"),
             require_user=os.environ.get("ETHOCENSUS_REQUIRE_USER", "1") != "0",
+            curation_db=os.environ.get("ETHOCENSUS_CURATION"),
         )
 
 
@@ -67,13 +79,46 @@ def open_census(path: str) -> sqlite3.Connection:
     return conn
 
 
+def _uri(path: str) -> str:
+    return f"file:{urllib.parse.quote(os.path.abspath(path))}?mode=ro"
+
+
 def get_db(request: Request) -> Iterator[sqlite3.Connection]:
-    """FastAPI dependency: one read-only census connection per request."""
-    conn = open_census(request.app.state.settings.census_db)
+    """FastAPI dependency: the census, read-only, with the curation file attached as ``cur``."""
+    settings: Settings = request.app.state.settings
+    conn = open_census(settings.census_db)
+    conn.execute("ATTACH DATABASE ? AS cur", (_uri(settings.curation_path),))
     try:
         yield conn
     finally:
         conn.close()
+
+
+def get_curation(request: Request) -> Iterator[sqlite3.Connection]:
+    """FastAPI dependency: the curation file, writable (for edits only)."""
+    conn = curation_store.connect(request.app.state.settings.curation_path)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def refresh_membership(request: Request, cur: sqlite3.Connection) -> None:
+    """Rebuild label and person membership after an edit."""
+    census = open_census(request.app.state.settings.census_db)
+    try:
+        membership.ensure_fresh(census, cur, force=True)
+    finally:
+        census.close()
+
+
+def back_to(url: str | None, fallback: str = "/", **message: str) -> RedirectResponse:
+    """Redirect (303) to a local URL, with an optional ``notice`` or ``error`` message."""
+    target = url if url and url.startswith("/") and not url.startswith("//") else fallback
+    if message:
+        joiner = "&" if "?" in target else "?"
+        target = f"{target}{joiner}{urllib.parse.urlencode(message)}"
+    return RedirectResponse(target, status_code=303)
 
 
 def current_user(request: Request) -> str | None:
@@ -83,7 +128,17 @@ def current_user(request: Request) -> str | None:
 def render(request: Request, name: str, **context) -> HTMLResponse:
     """Render a template with the common context (user, request)."""
     templates: Jinja2Templates = request.app.state.templates
-    return templates.TemplateResponse(request, name, {"user": current_user(request), **context})
+    message = {k: request.query_params.get(k) for k in ("notice", "error")}
+    context = {"user": current_user(request), **message, **context}
+    return templates.TemplateResponse(request, name, context)
+
+
+def _same_origin(request: Request) -> bool:
+    """Edits must come from this site's own pages (CSRF guard): Origin or Referer host."""
+    source = request.headers.get("origin") or request.headers.get("referer")
+    if not source:
+        return False
+    return urllib.parse.urlsplit(source).netloc == request.headers.get("host")
 
 
 def _fmt_int(value) -> str:
@@ -122,7 +177,7 @@ def _fmt_mtime(value) -> str:
 
 def create_app(settings: Settings) -> FastAPI:
     """Build the web app for one census file."""
-    from .routes import files, overview, runs, search
+    from .routes import changes, files, labels, overview, people, runs, search
 
     app = FastAPI(title="Ethoscope census", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
@@ -137,6 +192,17 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.templates = templates
     app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
 
+    curation_store.connect(settings.curation_path).close()
+    try:
+        census = open_census(settings.census_db)
+        cur = curation_store.connect(settings.curation_path)
+        if census.execute("SELECT 1 FROM sqlite_master WHERE name = 'db_summary'").fetchone():
+            membership.ensure_fresh(census, cur)
+        census.close()
+        cur.close()
+    except sqlite3.Error:  # no census yet: /health reports it
+        pass
+
     @app.middleware("http")
     async def require_user(request: Request, call_next):
         open_path = request.url.path == "/health" or request.url.path.startswith("/static/")
@@ -146,6 +212,8 @@ def create_app(settings: Settings) -> FastAPI:
                 "sign-in.</p>",
                 status_code=401,
             )
+        if request.method not in ("GET", "HEAD") and not _same_origin(request):
+            return HTMLResponse("<h1>Refused</h1><p>Cross-site request.</p>", status_code=403)
         return await call_next(request)
 
     @app.get("/health")
@@ -160,7 +228,7 @@ def create_app(settings: Settings) -> FastAPI:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=503)
         return JSONResponse({"ok": row is not None, "summarised_at": row[0] if row else None})
 
-    for module in (overview, runs, files, search):
+    for module in (overview, runs, files, search, labels, people, changes):
         app.include_router(module.router)
     return app
 

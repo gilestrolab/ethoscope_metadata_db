@@ -1,79 +1,91 @@
 {% extends "base.html" %}
-{% from "_macros.html" import category %}
+{% from "_macros.html" import category, label_chips, person_chips, label_form, notes_block %}
 {% block title %}{{ run.machine_name }} {{ run.start_local }} · Ethoscope census{% endblock %}
 {% block content %}
+{% set here = request.url.path %}
+{% set annotated = tubes|selectattr('groups')|list %}
+{% set statuses = [] %}{% for t in tubes %}{% for g in t.groups %}{% if g.status != 'unique' %}{% set _ = statuses.append(g.status) %}{% endif %}{% endfor %}{% endfor %}
 <p><a href="/runs?machine={{ run.machine_name|urlencode }}">← all runs of {{ run.machine_name }}</a></p>
 <h1>{{ run.machine_name }} · {{ (run.start_local or '')|replace('T', ' ') }}</h1>
-<p>{{ category(run.category) }}
-  {% if run.n_rows %} · {{ run.n_rows|int }} metadata rows from {{ run.n_sources|int }} file(s){% endif %}
-  {% if passed_over.superseded %} · passed over as an earlier run by {{ passed_over.superseded|int }} row(s){% endif %}
-  {% if passed_over.duplicate %} · another copy of a run claimed by {{ passed_over.duplicate|int }} row(s){% endif %}</p>
+<p class="summary">{{ category(run.category) }}
+  {% if people %} · {{ person_chips(people) }}{% elif run.experimenter %} · <a href="/runs?experimenter={{ run.experimenter|urlencode }}">{{ run.experimenter }}</a>{% endif %}
+  {% if labels %} · {{ label_chips(labels) }}{% endif %}
+  · {{ annotated|length }} of {{ tubes|length }} tubes annotated{% if files %} from {{ files|length }} file(s){% endif %}
+  {% if run.duration_h is not none %} · {{ run.duration_h|hours }}{% endif %}{% if run.interactor %} · {{ run.interactor }}{% endif %}</p>
+{% if passed_over.superseded or passed_over.duplicate %}<p class="muted">
+  {% if passed_over.superseded %}Passed over as an earlier run of the day by {{ passed_over.superseded|int }} metadata row(s).{% endif %}
+  {% if passed_over.duplicate %}Another copy of a run that {{ passed_over.duplicate|int }} metadata row(s) refer to.{% endif %}</p>{% endif %}
 
-<div class="grid2">
-  <section class="card">
-    <h2 style="margin-top:0">Recording</h2>
-    <dl class="facts">
-      <dt>File</dt><dd class="path mono">{{ run.path }}</dd>
-      <dt>Size</dt><dd>{{ run.size|size }}</dd>
-      <dt>Start (METADATA, lab clock)</dt><dd>{{ (run.start_local or '–')|replace('T', ' ') }}</dd>
-      <dt>Folder stamp</dt><dd>{{ (run.path_start or '–')|replace('T', ' ') }}{% if run.path_start and run.start_local and run.path_start[:10] != run.start_local[:10] %} <span class="warn">differs from METADATA</span>{% endif %}</dd>
-      <dt>Length</dt><dd>{{ run.duration_h|hours }}{% if run.duration_h is none %} <span class="muted">(no stop time recorded)</span>{% endif %}</dd>
-      <dt>Experimenter</dt><dd>{% if run.experimenter %}<a href="/runs?experimenter={{ run.experimenter|urlencode }}">{{ run.experimenter }}</a>{% else %}<span class="muted">not recorded</span>{% endif %}</dd>
-      <dt>Location</dt><dd>{{ run.location or '–' }}</dd>
-      <dt>ROIs</dt><dd>{{ run.n_rois|int }}</dd>
-      <dt>Interactor</dt><dd>{{ run.interactor or '–' }}{% if raw and raw.interactor_kwargs %} <details><summary>settings</summary><code class="path">{{ raw.interactor_kwargs }}</code></details>{% endif %}</dd>
-      <dt>Tracker</dt><dd>{{ run.tracker or '–' }}</dd>
-      <dt>Stack</dt><dd>{{ run.stack or 'no kernel recorded' }}{% if run.kernel %} <span class="muted">({{ run.kernel }})</span>{% endif %}</dd>
-      <dt>Camera</dt><dd>{{ run.camera_sensor or '–' }}</dd>
-      <dt>Software</dt><dd class="mono">{{ run.sw_version or '–' }}</dd>
-      {% if run.error %}<dt>Note</dt><dd><span class="warn">{{ run.error }}</span></dd>{% endif %}
-    </dl>
-  </section>
-
-  <section class="card scroll">
-    <h2 style="margin-top:0">Runs on this machine that day</h2>
-    <table>
-      <thead><tr><th>Start</th><th>Category</th><th class="num">Size</th><th class="num">Rows</th></tr></thead>
-      <tbody>
-      {% for s in same_day %}
-        <tr><td>{% if s.id == run.id %}<strong>{{ s.start_local|replace('T', ' ') }}</strong> (this run){% else %}<a href="/runs/{{ s.id }}">{{ s.start_local|replace('T', ' ') }}</a>{% endif %}</td>
-          <td>{{ category(s.category) }}</td><td class="num">{{ s.size|size }}</td><td class="num">{{ s.n_rows|int }}</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% if files %}
-    <h2>Metadata files that refer to it</h2>
-    <ul>{% for fid, fpath, sheet in files[:8] %}<li><a class="path" href="/files/{{ fid }}">{{ fpath }}{% if sheet %} [{{ sheet }}]{% endif %}</a></li>{% endfor %}</ul>
-    {% if files|length > 8 %}<details><summary>show all {{ files|length }} files</summary>
-    <ul>{% for fid, fpath, sheet in files[8:] %}<li><a class="path" href="/files/{{ fid }}">{{ fpath }}{% if sheet %} [{{ sheet }}]{% endif %}</a></li>{% endfor %}</ul></details>{% endif %}
-    {% endif %}
-  </section>
-</div>
-
-<section class="card scroll" style="margin-top:1rem">
-  <h2 style="margin-top:0">Tubes</h2>
-  <p class="muted" style="margin-top:0">Identical annotations from several files (often copies of one file) are grouped.</p>
-  <table>
-    <thead><tr><th class="num">ROI</th><th>Genotype</th><th>Sex</th><th>Treatment</th><th>Status</th><th>From</th></tr></thead>
+<section class="card scroll">
+  <div class="toolbar"><h2 style="margin:0">Tubes</h2>{% if shown.other %}<button type="button" data-toggle-cols="tubes-table">More columns</button>{% endif %}</div>
+  {% set cols = 2 + (1 if shown.genotype else 0) + (1 if shown.sex else 0) + (1 if shown.treatment else 0) + (1 if statuses else 0) + (1 if shown.other else 0) %}
+  <table id="tubes-table">
+    <thead><tr><th class="num narrow">ROI</th>{% if shown.genotype %}<th>Genotype</th>{% endif %}{% if shown.sex %}<th>Sex</th>{% endif %}{% if shown.treatment %}<th>Treatment</th>{% endif %}{% if statuses %}<th>Match</th>{% endif %}<th>From</th>{% if shown.other %}<th class="opt">Other columns</th>{% endif %}</tr></thead>
     <tbody>
     {% for tube in tubes %}
       {% if tube.groups %}{% for g in tube.groups %}
         <tr>
-          {% if loop.first %}<td class="num" rowspan="{{ tube.groups|length }}">{{ tube.region }}{% if not tube.in_map %} <span class="warn">not in ROI_MAP</span>{% endif %}{% if tube.conflict %}<br><span class="warn">genotypes differ</span>{% endif %}</td>{% endif %}
-          <td>{{ g.genotype or '' }}</td><td>{{ g.sex or '' }}</td><td>{{ g.treatment or '' }}</td>
-          <td>{{ g.status }}{% if g.notes %} <span class="muted" title="{{ g.notes|join('; ') }}">ⓘ</span>{% endif %}</td>
-          <td>{% set items = g.files.items()|list %}
-            {% for fid, (fpath, row_idx) in items[:3] %}<a class="path" href="/files/{{ fid }}" title="{{ fpath }}">{{ fpath.rsplit('/', 1)[-1] }}</a> <span class="muted">row {{ row_idx }}</span>{% if not loop.last %}<br>{% endif %}{% endfor %}
-            {% if items|length > 3 %}<br><span class="muted">and {{ items|length - 3 }} more file(s)</span>{% endif %}
-            {% if g.other_json %}<details><summary>other columns</summary><code class="path">{{ g.other_json }}</code></details>{% endif %}</td>
+          {% if loop.first %}<td class="num narrow" rowspan="{{ tube.groups|length }}">{{ tube.region }}{% if not tube.in_map %} <span class="warn">not in ROI_MAP</span>{% endif %}{% if tube.conflict %}<br><span class="warn">genotypes differ</span>{% endif %}</td>{% endif %}
+          {% if shown.genotype %}<td>{{ g.genotype or '' }}</td>{% endif %}{% if shown.sex %}<td>{{ g.sex or '' }}</td>{% endif %}{% if shown.treatment %}<td>{{ g.treatment or '' }}</td>{% endif %}
+          {% if statuses %}<td>{% if g.status != 'unique' %}{{ g.status }}{% if g.notes %} <span class="muted" title="{{ g.notes|join('; ') }}">ⓘ</span>{% endif %}{% endif %}</td>{% endif %}
+          <td>{% set items = g.files.items()|list %}{% set first = items[0] %}
+            <a class="path" href="/files/{{ first[0] }}" title="{{ first[1][0] }}">{{ first[1][0].rsplit('/', 1)[-1] }}</a>{% if items|length > 1 %} <span class="muted" title="identical annotation in {{ items|length - 1 }} more file(s)">+{{ items|length - 1 }}</span>{% endif %}</td>
+          {% if shown.other %}<td class="opt small">{% for k, v in g.other %}<span class="kv"><span class="muted">{{ k }}:</span> {{ v }}</span>{% endfor %}</td>{% endif %}
         </tr>
       {% endfor %}{% else %}
-        <tr><td class="num">{{ tube.region }}</td><td colspan="5" class="muted">no metadata</td></tr>
+        <tr><td class="num narrow">{{ tube.region }}</td><td colspan="{{ cols - 1 }}" class="muted">no metadata</td></tr>
       {% endif %}
     {% else %}
-      <tr><td colspan="6" class="muted">No ROI_MAP (unreadable or empty file).</td></tr>
+      <tr><td colspan="{{ cols }}" class="muted">No ROI_MAP (unreadable or empty file).</td></tr>
     {% endfor %}
     </tbody>
   </table>
 </section>
+
+<details class="card section" {{ 'open' if same_day|length > 1 }}><summary><h2>Other runs on this machine that day ({{ same_day|length - 1 }})</h2></summary>
+  <table>
+    <thead><tr><th>Start</th><th>Category</th><th class="num">Size</th><th class="num">Rows</th></tr></thead>
+    <tbody>
+    {% for s in same_day %}
+      <tr><td>{% if s.id == run.id %}<strong>{{ s.start_local|replace('T', ' ') }}</strong> (this run){% else %}<a href="/runs/{{ s.id }}">{{ s.start_local|replace('T', ' ') }}</a>{% endif %}</td>
+        <td>{{ category(s.category) }}</td><td class="num">{{ s.size|size }}</td><td class="num">{{ s.n_rows|int }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</details>
+
+{% if files %}
+<details class="card section"><summary><h2>Metadata files that refer to it ({{ files|length }})</h2></summary>
+  <ul>{% for fid, fpath, sheet in files %}<li><a class="path" href="/files/{{ fid }}">{{ fpath }}{% if sheet %} [{{ sheet }}]{% endif %}</a></li>{% endfor %}</ul>
+</details>
+{% endif %}
+
+<details class="card section"><summary><h2>Recording details</h2></summary>
+  <dl class="facts">
+    <dt>File</dt><dd class="path mono">{{ run.path }}</dd>
+    <dt>Size</dt><dd>{{ run.size|size }}</dd>
+    <dt>Start (METADATA, lab clock)</dt><dd>{{ (run.start_local or '–')|replace('T', ' ') }}</dd>
+    <dt>Folder stamp</dt><dd>{{ (run.path_start or '–')|replace('T', ' ') }}{% if run.path_start and run.start_local and run.path_start[:10] != run.start_local[:10] %} <span class="warn">differs from METADATA</span>{% endif %}</dd>
+    <dt>Length</dt><dd>{{ run.duration_h|hours }}{% if run.duration_h is none %} <span class="muted">(no stop time recorded)</span>{% endif %}</dd>
+    <dt>Experimenter (as typed)</dt><dd>{{ run.experimenter or '–' }}</dd>
+    <dt>Location</dt><dd>{{ run.location or '–' }}</dd>
+    <dt>ROIs</dt><dd>{{ run.n_rois|int }}</dd>
+    <dt>Interactor</dt><dd>{{ run.interactor or '–' }}{% if raw and raw.interactor_kwargs %} <details><summary>settings</summary><code class="path">{{ raw.interactor_kwargs }}</code></details>{% endif %}</dd>
+    <dt>Tracker</dt><dd>{{ run.tracker or '–' }}</dd>
+    <dt>Stack</dt><dd>{{ run.stack or 'no kernel recorded' }}{% if run.kernel %} <span class="muted">({{ run.kernel }})</span>{% endif %}</dd>
+    <dt>Camera</dt><dd>{{ run.camera_sensor or '–' }}</dd>
+    <dt>Software</dt><dd class="mono">{{ run.sw_version or '–' }}</dd>
+    {% if run.error %}<dt>Note</dt><dd><span class="warn">{{ run.error }}</span></dd>{% endif %}
+  </dl>
+</details>
+
+<details class="card section" {{ 'open' if notes }}><summary><h2>Labels and notes{% if notes %} ({{ notes|length }} note{{ 's' if notes|length > 1 }}){% endif %}</h2></summary>
+  {% for l in labels %}{% if l.via == 'run' %}
+    <form method="post" action="/labels/{{ l.id }}/unlink" class="inline-form">{{ label_chips([l]) }}
+      <input type="hidden" name="target_type" value="run"><input type="hidden" name="target" value="{{ run.path }}"><input type="hidden" name="back" value="{{ here }}">
+      <button class="link" type="submit" title="Remove this label">×</button></form>
+  {% else %}{{ label_chips([l]) }} <span class="muted">(via its {{ l.via }})</span>{% endif %}{% endfor %}
+  <p>{{ label_form('run', all_labels, here, target=run.path) }}</p>
+  {{ notes_block(notes, 'run', run.path, here) }}
+</details>
 {% endblock %}

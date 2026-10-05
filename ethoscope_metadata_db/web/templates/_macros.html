@@ -2,20 +2,35 @@
 <span class="pill"><span class="swatch s-{{ series_of(name) }}"></span>{{ name }}</span>
 {%- endmacro %}
 
+{% macro label_chips(labels) -%}
+{% for l in labels %}<a class="tag {{ 'project' if l.kind == 'project' }}" href="/labels/{{ l.id }}" title="{{ l.kind }}{% if l.via and l.via != 'run' and l.via != 'file' %}, via its {{ l.via }}{% endif %}">{{ l.name }}</a>{% endfor %}
+{%- endmacro %}
+
+{% macro person_chips(people) -%}
+{% for p in people %}<a class="who" href="/people/{{ p.id }}">{{ p.name }}</a>{% endfor %}
+{%- endmacro %}
+
+{% macro facet_block(facet, values, selection, path, target) -%}
+<div class="facet">
+  <h3>{{ facet.label }}</h3>
+  <ul>
+    {% for v in values %}{% if loop.index == 7 %}</ul><details class="more"><summary>more ({{ values|length - 6 }})</summary><ul>{% endif %}
+    <li><a href="{{ selection.toggle_url(path, facet.param, v.value) }}" class="{{ 'on' if v.on }}"
+           hx-get="{{ selection.toggle_url(path, facet.param, v.value) }}" hx-target="{{ target }}" hx-push-url="true">
+      <span>{% if facet.param == 'category' %}{{ category(v.value) }}{% else %}{{ v.value }}{% endif %}</span><span class="n">{{ v.n|int }}</span></a></li>
+    {% endfor %}
+  </ul>{% if values|length > 6 %}</details>{% endif %}
+</div>
+{%- endmacro %}
+
 {% macro facets(table, facets, selection, path, target) -%}
 <aside class="facets">
-  {% for facet in table.facets %}{% set values = facets[facet.param] %}{% if values %}
-  <div class="facet">
-    <h3>{{ facet.label }}</h3>
-    <ul>
-      {% for v in values %}
-      <li><a href="{{ selection.toggle_url(path, facet.param, v.value) }}" class="{{ 'on' if v.on }}"
-             hx-get="{{ selection.toggle_url(path, facet.param, v.value) }}" hx-target="{{ target }}" hx-push-url="true">
-        <span>{% if facet.param == 'category' %}{{ category(v.value) }}{% else %}{{ v.value }}{% endif %}</span><span class="n">{{ v.n|int }}</span></a></li>
-      {% endfor %}
-    </ul>
-  </div>
-  {% endif %}{% endfor %}
+  {% for facet in table.facets if facet.primary and facets[facet.param] %}{{ facet_block(facet, facets[facet.param], selection, path, target) }}{% endfor %}
+  {% set secondary = table.facets|rejectattr('primary')|list %}
+  {% set any_on = secondary|selectattr('param', 'in', selection.filters)|list %}
+  <details class="more-filters" {{ 'open' if any_on }}><summary>More filters</summary>
+  {% for facet in secondary if facets[facet.param] %}{{ facet_block(facet, facets[facet.param], selection, path, target) }}{% endfor %}
+  </details>
 </aside>
 {%- endmacro %}
 
@@ -31,10 +46,10 @@
 {% endif %}
 {%- endmacro %}
 
-{% macro sort_header(label, key, selection, path, target, num=False) -%}
+{% macro sort_header(label, key, selection, path, target, num=False, opt=False) -%}
 {% set on = selection.sort == key %}
 {% set next = ('' if on and selection.desc else '-') ~ key %}
-<th class="{{ 'num' if num }}"><a href="{{ selection.url(path, sort=next) }}" hx-get="{{ selection.url(path, sort=next) }}" hx-target="{{ target }}" hx-push-url="true">{{ label }}{% if on %} {{ '↓' if selection.desc else '↑' }}{% endif %}</a></th>
+<th class="{{ 'num' if num }} {{ 'opt' if opt }}"><a href="{{ selection.url(path, sort=next) }}" hx-get="{{ selection.url(path, sort=next) }}" hx-target="{{ target }}" hx-push-url="true">{{ label }}{% if on %} {{ '↓' if selection.desc else '↑' }}{% endif %}</a></th>
 {%- endmacro %}
 
 {% macro pager(selection, path, total, pages, target) -%}
@@ -43,4 +58,29 @@
   <span class="muted">page {{ selection.page }} of {{ pages|int }} · {{ total|int }} total</span>
   {% if selection.page < pages %}<a href="{{ selection.url(path, page=selection.page + 1) }}" hx-get="{{ selection.url(path, page=selection.page + 1) }}" hx-target="{{ target }}" hx-push-url="true">next →</a>{% endif %}
 </div>
+{%- endmacro %}
+
+{% macro label_form(scope, all_labels, back, query='', target='', button='Add label') -%}
+<form method="post" action="/labels/apply" class="inline-form">
+  <input type="hidden" name="scope" value="{{ scope }}">
+  <input type="hidden" name="selection" value="{{ query }}">
+  <input type="hidden" name="target" value="{{ target }}">
+  <input type="hidden" name="back" value="{{ back }}">
+  <select name="label_id" aria-label="Existing label"><option value="">existing label…</option>
+    {% for l in all_labels %}<option value="{{ l.id }}">{{ l.name }}{% if l.kind == 'project' %} (project){% endif %}</option>{% endfor %}</select>
+  <input type="text" name="new_name" placeholder="or a new label" aria-label="New label">
+  <button type="submit">{{ button }}</button>
+</form>
+{%- endmacro %}
+
+{% macro notes_block(notes, target_type, target, back) -%}
+{% for n in notes %}
+<div class="note"><p>{{ n.text }}</p><p class="muted">{{ n.who or 'someone' }} · {{ n.at|replace('T', ' ') }}
+  <form method="post" action="/notes/{{ n.id }}/delete" class="inline-form"><input type="hidden" name="back" value="{{ back }}"><button class="link" type="submit">delete</button></form></p></div>
+{% endfor %}
+<form method="post" action="/notes" class="note-form">
+  <input type="hidden" name="target_type" value="{{ target_type }}"><input type="hidden" name="target" value="{{ target }}"><input type="hidden" name="back" value="{{ back }}">
+  <textarea name="text" rows="2" placeholder="Add a note…" aria-label="Note"></textarea>
+  <button type="submit">Add note</button>
+</form>
 {%- endmacro %}

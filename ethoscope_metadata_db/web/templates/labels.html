@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Labels · Ethoscope census{% endblock %}
+{% block content %}
+<h1>Labels and projects</h1>
+<p class="muted">A label groups metadata files, runs or whole folders; a project is a label with an optional DOI and description.
+Label a selection from the Runs or Metadata files pages, or <a href="/labels/suggestions">start from folders that look like projects</a>.</p>
+<section class="card scroll">
+  <table>
+    <thead><tr><th>Name</th><th>Kind</th><th class="num">Runs</th><th class="num">Files</th><th class="num">Links</th></tr></thead>
+    <tbody>
+    {% for l in labels %}
+      <tr><td><a class="tag {{ 'project' if l.kind == 'project' }}" href="/labels/{{ l.id }}">{{ l.name }}</a></td><td>{{ l.kind }}</td>
+        <td class="num"><a href="/runs?label={{ l.name|urlencode }}">{{ l.n_runs|int }}</a></td>
+        <td class="num"><a href="/files?label={{ l.name|urlencode }}">{{ l.n_files|int }}</a></td>
+        <td class="num">{{ l.n_links|int }}</td></tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No labels yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+<details class="card section"><summary><h2>New label</h2></summary>
+  <form method="post" action="/labels" class="stack-form">
+    <label>Name <input type="text" name="name" required></label>
+    <label>Kind <select name="kind"><option value="tag">tag</option><option value="project">project</option></select></label>
+    <label>DOI <input type="text" name="doi" placeholder="optional"></label>
+    <label>Authors <input type="text" name="authors" placeholder="optional"></label>
+    <label>Description <textarea name="description" rows="2"></textarea></label>
+    <button type="submit">Create</button>
+  </form>
+</details>
+{% endblock %}

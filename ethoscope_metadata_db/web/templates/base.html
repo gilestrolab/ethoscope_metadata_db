@@ -6,6 +6,7 @@
   <title>{% block title %}Ethoscope census{% endblock %}</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/ui.js" defer></script>
 </head>
 <body>
 <header class="top">
@@ -15,6 +16,9 @@
     <a href="/" class="{{ 'on' if here == '/' }}">Overview</a>
     <a href="/runs" class="{{ 'on' if here.startswith('/runs') }}">Runs</a>
     <a href="/files" class="{{ 'on' if here.startswith('/files') }}">Metadata files</a>
+    <a href="/labels" class="{{ 'on' if here.startswith('/labels') }}">Labels</a>
+    <a href="/people" class="{{ 'on' if here.startswith('/people') }}">People</a>
+    <a href="/changes" class="{{ 'on' if here.startswith('/changes') }}">Changes</a>
   </nav>
   <form action="/search" method="get" role="search">
     <input type="search" name="q" value="{{ q or '' }}" placeholder="Machine, date, person, file, genotype…" aria-label="Search">
@@ -22,6 +26,8 @@
   {% if user %}<span class="user">{{ user }}</span>{% endif %}
 </header>
 <main>
+{% if notice %}<p class="banner ok" role="status">{{ notice }}</p>{% endif %}
+{% if error %}<p class="banner bad" role="alert">{{ error }}</p>{% endif %}
 {% block content %}{% endblock %}
 </main>
 </body>

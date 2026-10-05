@@ -74,7 +74,7 @@ class TestPages:
         run_id = _run_id(client, census_path, "2024-01-05T10:00:00")
         page = client.get(f"/runs/{run_id}", headers=USER).text
         assert "ETHOSCOPE_007" in page and "Tubes" in page and "metadata.csv" in page
-        assert "Runs on this machine that day" in page
+        assert "Other runs on this machine that day" in page
         assert client.get("/runs/999999", headers=USER).status_code == 404
 
     def test_run_page_flags_genotype_conflicts(self, client, census_path):

@@ -19,13 +19,82 @@ PER_PAGE = 50
 
 @dataclass(frozen=True)
 class Facet:
-    """A filterable column: ``param`` in the URL, ``column`` in SQL."""
+    """A filterable column: ``param`` in the URL, ``column`` in SQL.
+
+    Attributes:
+        limit: How many values to count and offer (0: a hidden filter).
+        by_value: List values in order (years) rather than by count.
+        primary: Shown by default; others sit under "More filters".
+    """
 
     param: str
     column: str
     label: str
     limit: int = 12
-    by_value: bool = False  # list values in order (years) rather than by count
+    by_value: bool = False
+    primary: bool = True
+
+    def clause(self, values: list[str]) -> tuple[str, list]:
+        parts, params = [], []
+        real = [v for v in values if v != NONE]
+        if real:
+            parts.append(f"{self.column} IN ({', '.join('?' * len(real))})")
+            params += real
+        if NONE in values:
+            parts.append(f"({self.column} IS NULL OR {self.column} = '')")
+        return "(" + " OR ".join(parts) + ")", params
+
+    def counts(self, conn: sqlite3.Connection, table: str, clause: str, params: list) -> list:
+        order = "value DESC" if self.by_value else "n DESC, value"
+        return conn.execute(
+            f"SELECT coalesce(nullif({self.column}, ''), ?) AS value, count(*) AS n "
+            f"FROM {table} {clause} GROUP BY value ORDER BY {order} LIMIT ?",
+            [NONE, *params, self.limit],
+        ).fetchall()
+
+
+@dataclass(frozen=True)
+class LinkFacet(Facet):
+    """A facet over curated links (labels, people), from the attached curation file.
+
+    ``link`` is a membership table ``(target_id, <entity_id>)`` and ``entity``
+    the table whose ``name`` is shown, e.g. ``cur.run_label`` and ``cur.label``.
+    """
+
+    link: str = ""
+    entity: str = ""
+    entity_id: str = ""
+
+    def _members(self) -> str:
+        return (
+            f"SELECT l.target_id FROM {self.link} l JOIN {self.entity} e "
+            f"ON e.id = l.{self.entity_id} WHERE e.name IN "
+        )
+
+    def clause(self, values: list[str]) -> tuple[str, list]:
+        parts, params = [], []
+        real = [v for v in values if v != NONE]
+        if real:
+            parts.append(f"id IN ({self._members()}({', '.join('?' * len(real))}))")
+            params += real
+        if NONE in values:
+            parts.append(f"id NOT IN (SELECT target_id FROM {self.link})")
+        return "(" + " OR ".join(parts) + ")", params
+
+    def counts(self, conn: sqlite3.Connection, table: str, clause: str, params: list) -> list:
+        rows = conn.execute(
+            f"SELECT e.name AS value, count(DISTINCT l.target_id) AS n FROM {self.link} l "
+            f"JOIN {self.entity} e ON e.id = l.{self.entity_id} "
+            f"WHERE l.target_id IN (SELECT id FROM {table} {clause}) "
+            "GROUP BY e.name ORDER BY n DESC, value LIMIT ?",
+            [*params, self.limit],
+        ).fetchall()
+        joiner = "AND" if clause else "WHERE"
+        unlinked = conn.execute(
+            f"SELECT count(*) FROM {table} {clause} {joiner} id NOT IN (SELECT target_id FROM {self.link})",
+            params,
+        ).fetchone()[0]
+        return [*rows, {"value": NONE, "n": unlinked}] if unlinked and rows else rows
 
 
 @dataclass(frozen=True)
@@ -115,14 +184,9 @@ def where(table: Table, selection: Selection, skip: str | None = None) -> tuple[
         facet = table.facet(param)
         if facet is None or param == skip or not values:
             continue
-        parts = []
-        real = [v for v in values if v != NONE]
-        if real:
-            parts.append(f"{facet.column} IN ({', '.join('?' * len(real))})")
-            params += real
-        if NONE in values:
-            parts.append(f"({facet.column} IS NULL OR {facet.column} = '')")
-        clauses.append("(" + " OR ".join(parts) + ")")
+        sql, values_params = facet.clause(values)
+        clauses.append(sql)
+        params += values_params
     if selection.q and table.text_columns:
         like = f"%{selection.q}%"
         clauses.append("(" + " OR ".join(f"{c} LIKE ?" for c in table.text_columns) + ")")
@@ -136,13 +200,11 @@ def facet_counts(
     """For each facet, its most frequent values under the other filters."""
     out = {}
     for facet in table.facets:
+        if facet.limit == 0 and not selection.filters.get(facet.param):
+            out[facet.param] = []
+            continue
         clause, params = where(table, selection, skip=facet.param)
-        order = "value DESC" if facet.by_value else "n DESC, value"
-        rows = conn.execute(
-            f"SELECT coalesce(nullif({facet.column}, ''), ?) AS value, count(*) AS n "
-            f"FROM {table.name} {clause} GROUP BY value ORDER BY {order} LIMIT ?",
-            [NONE, *params, facet.limit],
-        ).fetchall()
+        rows = facet.counts(conn, table.name, clause, params) if facet.limit else []
         chosen = selection.filters.get(facet.param, [])
         values = [
             {"value": str(r["value"]), "n": r["n"], "on": str(r["value"]) in chosen} for r in rows

@@ -43,9 +43,13 @@ class TestSelection:
 
 
 @pytest.fixture
-def db():
+def db(tmp_path):
+    from ethoscope_metadata_db.web.curation import store
+
+    store.connect(tmp_path / "cur.sqlite").close()
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
+    conn.execute("ATTACH DATABASE ? AS cur", (str(tmp_path / "cur.sqlite"),))
     conn.execute(
         "CREATE TABLE db_summary (id INTEGER, path TEXT, machine_name TEXT, experimenter TEXT, "
         "location TEXT, homes TEXT, category TEXT, year TEXT, month TEXT, start_local TEXT, "

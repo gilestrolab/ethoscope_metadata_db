@@ -1,76 +1,80 @@
 {% extends "base.html" %}
-{% from "_macros.html" import category %}
+{% from "_macros.html" import category, label_chips, person_chips, label_form, notes_block %}
 {% block title %}{{ file.path.rsplit('/', 1)[-1] }} · Ethoscope census{% endblock %}
 {% block content %}
+{% set here = request.url.path %}
+{% set unmatched_n = file.n_rows - file.n_unique %}
 <p><a href="/files?home={{ (file.home or NONE)|urlencode }}">← metadata files of {{ file.home or 'this location' }}</a></p>
 <h1 class="path">{{ file.path.rsplit('/', 1)[-1] }}{% if file.sheet %} [{{ file.sheet }}]{% endif %}</h1>
-
-<div class="grid2">
-  <section class="card">
-    <h2 style="margin-top:0">File</h2>
-    <dl class="facts">
-      <dt>Path</dt><dd class="path mono">{{ file.path }}</dd>
-      <dt>Home · location</dt><dd>{{ file.home or '–' }} · {{ file.tag or '–' }}</dd>
-      <dt>Modified</dt><dd>{{ file.mtime|mtime }} · {{ file.size|size }}</dd>
-      <dt>Outcome</dt><dd>{{ file.outcome }} <span class="muted">({{ file.status }})</span></dd>
-      <dt>Dates</dt><dd>{% if file.date_min %}{{ file.date_min }} → {{ file.date_max }}{% else %}–{% endif %}</dd>
-      <dt>Date reading</dt><dd>{% set order = {'dmy': 'day first (from its own dates)', 'mdy': 'month first (from its own dates)', 'unknown': 'order unknown: ambiguous dates kept both ways', 'mixed': 'mixed day/month orders', 'split': 'day, month, year columns'} %}{{ order.get(file.date_order, 'ISO or spreadsheet dates') }}</dd>
-      <dt>Columns used</dt><dd>{% for field, column in column_map.items() %}<code>{{ column }}</code>{% if field != column %} as {{ field }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
-      {% if file.note %}<dt>Note</dt><dd><span class="warn">{{ file.note }}</span></dd>{% endif %}
-    </dl>
-    {% if file.n_unique %}<p><a class="button" href="/files/{{ file.id }}/ethoscopy.csv">Download matched tubes for ethoscopy</a></p>{% endif %}
-    {% if copies %}
-    <h2>Identical copies</h2>
-    <ul>{% for c in copies %}<li><a class="path" href="/files/{{ c.id }}">{{ c.path }}</a> <span class="muted">{{ c.tag }}</span></li>{% endfor %}</ul>
-    {% endif %}
-  </section>
-
-  <section class="card">
-    <h2 style="margin-top:0">Rows</h2>
-    <table>
-      <tbody>
-        <tr><td>Matched to exactly one run</td><td class="num">{{ file.n_unique|int }}</td></tr>
-        <tr><td>No run starts that day</td><td class="num">{{ file.n_not_found|int }}</td></tr>
-        <tr><td>Region not in the run's ROI_MAP</td><td class="num">{{ file.n_roi_missing|int }}</td></tr>
-        <tr><td>Run unreadable</td><td class="num">{{ file.n_roi_unknown|int }}</td></tr>
-        <tr><td>Day/month order unknown, both readings find runs</td><td class="num">{{ file.n_date_ambiguous|int }}</td></tr>
-        <tr><td>Several candidate runs</td><td class="num">{{ file.n_ambiguous|int }}</td></tr>
-        <tr><td>Missing date, machine or region</td><td class="num">{{ file.n_incomplete|int }}</td></tr>
-        <tr><td><strong>All rows</strong></td><td class="num"><strong>{{ file.n_rows|int }}</strong></td></tr>
-      </tbody>
-    </table>
-    <p class="muted">Columns in the file: {{ columns|join(', ') }}</p>
-  </section>
-</div>
+<p class="summary">{{ file.outcome }}
+  {% if people %} · {{ person_chips(people) }}{% elif file.home %} · {{ file.home }}{% endif %}
+  {% if labels %} · {{ label_chips(labels) }}{% endif %}
+  · <strong>{{ file.n_unique|int }}</strong> of {{ file.n_rows|int }} rows matched to one run
+  {% if file.n_dbs %} · claims {{ file.n_dbs|int }} run(s){% endif %}
+  {% if file.date_min %} · {{ file.date_min }}{% if file.date_max != file.date_min %} → {{ file.date_max }}{% endif %}{% endif %}</p>
+{% if file.n_unique %}<p><a class="button" href="/files/{{ file.id }}/ethoscopy.csv">Download matched tubes for ethoscopy</a></p>{% endif %}
+{% if file.note %}<p><span class="warn">{{ file.note }}</span></p>{% endif %}
 
 {% if unmatched %}
-<section class="card scroll" style="margin-top:1rem">
-  <h2 style="margin-top:0">Rows not matched to one run{% if unmatched|length >= 500 %} (first 500){% endif %}</h2>
-  <table>
-    <thead><tr><th class="num">Row</th><th>Date</th><th>Time</th><th>Machine</th><th class="num">ROI</th><th>Genotype</th><th>Status</th><th>Why</th></tr></thead>
+<details class="card section" {{ 'open' if unmatched|length <= 20 }}><summary><h2>Rows not matched to one run ({{ unmatched_n|int }})</h2></summary>
+  <p class="muted">
+    {% for label, n in [('no run starts that day', file.n_not_found), ('region not in the run', file.n_roi_missing), ('run unreadable', file.n_roi_unknown), ('day/month order unknown', file.n_date_ambiguous), ('several candidate runs', file.n_ambiguous), ('missing date, machine or region', file.n_incomplete)] if n %}{{ label }}: {{ n|int }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+  <div class="scroll"><table>
+    <thead><tr><th class="num">Row</th><th>Date</th><th>Time</th><th>Machine</th><th class="num">ROI</th><th>Genotype</th><th>Why</th></tr></thead>
     <tbody>
     {% for r in unmatched %}
       <tr><td class="num">{{ r.row_idx }}</td><td>{{ r.date or '–' }}{% if r.date_alt %} <span class="muted">or {{ r.date_alt }}</span>{% endif %}</td>
         <td>{{ r.start_time or '' }}</td><td>{{ r.machine_name or '–' }}</td><td class="num">{{ r.region_id or '–' }}</td>
-        <td>{{ r.genotype or '' }}</td><td>{{ r.status }}</td><td class="muted">{{ r.note or '' }}</td></tr>
+        <td>{{ r.genotype or '' }}</td><td>{{ r.status|replace('_', ' ') }}{% if r.note %} <span class="muted">· {{ r.note }}</span>{% endif %}</td></tr>
     {% endfor %}
     </tbody>
-  </table>
-</section>
+  </table></div>
+  {% if unmatched|length >= 500 %}<p class="muted">First 500 shown.</p>{% endif %}
+</details>
 {% endif %}
 
 {% if runs %}
-<section class="card scroll" style="margin-top:1rem">
-  <h2 style="margin-top:0">Runs it claims ({{ runs|length }})</h2>
-  <table>
-    <thead><tr><th>Start</th><th>Machine</th><th>Experimenter</th><th>Category</th><th class="num">Rows</th></tr></thead>
+<details class="card section"><summary><h2>Runs it claims ({{ runs|length }})</h2></summary>
+  <div class="scroll"><table>
+    <thead><tr><th>Start</th><th>Machine</th><th>Category</th><th class="num">Rows</th></tr></thead>
     <tbody>
     {% for r in runs %}
-      <tr><td><a href="/runs/{{ r.id }}">{{ (r.start_local or '–')|replace('T', ' ') }}</a></td><td>{{ r.machine_name }}</td><td>{{ r.experimenter or '' }}</td>
+      <tr><td><a href="/runs/{{ r.id }}">{{ (r.start_local or '–')|replace('T', ' ') }}</a></td><td>{{ r.machine_name }}</td>
         <td>{{ category(r.category) }}</td><td class="num">{{ r.n_rows|int }}</td></tr>
     {% endfor %}
     </tbody>
-  </table>
-</section>
+  </table></div>
+</details>
 {% endif %}
+
+<details class="card section"><summary><h2>File details</h2></summary>
+  <dl class="facts">
+    <dt>Path</dt><dd class="path mono">{{ file.path }}</dd>
+    <dt>Home · location</dt><dd>{{ file.home or '–' }} · {{ file.tag or '–' }}</dd>
+    <dt>Modified</dt><dd>{{ file.mtime|mtime }} · {{ file.size|size }}</dd>
+    <dt>Status</dt><dd>{{ file.status }}</dd>
+    <dt>Date reading</dt><dd>{% set order = {'dmy': 'day first (from its own dates)', 'mdy': 'month first (from its own dates)', 'unknown': 'order unknown: ambiguous dates kept both ways', 'mixed': 'mixed day/month orders', 'split': 'day, month, year columns'} %}{{ order.get(file.date_order, 'ISO or spreadsheet dates') }}</dd>
+    <dt>Columns used</dt><dd>{% for field, column in column_map.items() %}<code>{{ column }}</code>{% if field != column %} as {{ field }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
+    <dt>All columns</dt><dd class="muted">{{ columns|join(', ') }}</dd>
+  </dl>
+</details>
+
+{% if copies %}
+<details class="card section"><summary><h2>Identical copies ({{ copies|length }})</h2></summary>
+  <ul>{% for c in copies %}<li><a class="path" href="/files/{{ c.id }}">{{ c.path }}</a> <span class="muted">{{ c.tag }}</span></li>{% endfor %}</ul>
+</details>
+{% endif %}
+
+<details class="card section" {{ 'open' if notes }}><summary><h2>Labels and notes{% if notes %} ({{ notes|length }} note{{ 's' if notes|length > 1 }}){% endif %}</h2></summary>
+  {% for l in labels %}{% if l.via == 'file' %}
+    <form method="post" action="/labels/{{ l.id }}/unlink" class="inline-form">{{ label_chips([l]) }}
+      <input type="hidden" name="target_type" value="file"><input type="hidden" name="target" value="{{ file.path }}"><input type="hidden" name="back" value="{{ here }}">
+      <button class="link" type="submit" title="Remove this label">×</button></form>
+  {% else %}{{ label_chips([l]) }} <span class="muted">(via its {{ l.via }})</span>{% endif %}{% endfor %}
+  <p>{{ label_form('file', all_labels, here, target=file.path) }}</p>
+  {% set folder = file.path.rsplit('/', 1)[0] %}
+  <p class="muted">Or label its whole folder <code class="path">{{ folder }}</code>:</p>
+  <p>{{ label_form('folder', all_labels, here, target=folder, button='Label the folder') }}</p>
+  {{ notes_block(notes, 'file', file.path, here) }}
+</details>
 {% endblock %}

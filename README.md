@@ -103,6 +103,18 @@ ethoscopy metadata. It only reads the census.
 ETHOCENSUS_DB=/path/to/census.sqlite ethocensus-web        # serves on 127.0.0.1:8095
 ```
 
+Curation lives in its own file (`ETHOCENSUS_CURATION`, default `curation.sqlite` next to the
+census), so the census can be rebuilt without losing it:
+
+- **Labels and projects**: free tags, or projects with a DOI, description and authors, attached to
+  runs, metadata files or whole folders. Label any filtered selection of runs or files in one go,
+  or accept a suggested project folder. A label on a metadata file also covers the runs it claims.
+- **People**: one person gathers the names they appear under (home folders, experimenter names
+  typed on the nodes); the UI suggests names that probably belong together.
+- **Notes** on runs, files, labels and people, and a **Changes** log where any edit can be undone.
+
+Pages show the essentials first; secondary columns, filters and sections open on request.
+
 It expects to sit behind an SSO proxy (oauth2-proxy with OIDC) that sets `X-Forwarded-Email`;
 requests without it are refused. For local development only, set `ETHOCENSUS_REQUIRE_USER=0`.
 

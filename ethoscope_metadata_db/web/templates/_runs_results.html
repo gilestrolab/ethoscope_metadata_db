@@ -1,4 +1,4 @@
-{% from "_macros.html" import facets as facet_list, chips, sort_header, pager, category %}
+{% from "_macros.html" import facets as facet_list, chips, sort_header, pager, category, label_chips, person_chips, label_form %}
 {% set path = "/runs" %}{% set target = "#results" %}
 <div class="browser">
   {{ facet_list(table, facets, selection, path, target) }}
@@ -9,40 +9,48 @@
         <input type="search" name="q" value="{{ selection.q }}" placeholder="Filter by path, machine, person, location…" aria-label="Filter runs">
       </form>
       <strong>{{ total|int }}</strong> runs
-      <a class="button" href="{{ selection.url('/runs/export.csv') }}" title="One row per run">Download runs (CSV)</a>
-      <a class="button" href="{{ selection.url('/runs/ethoscopy.csv') }}" title="Uniquely matched tubes of these runs, ready for ethoscopy's link_meta_index">Download ethoscopy metadata</a>
+      <button type="button" data-toggle-cols="runs-table">More columns</button>
+      <details class="menu"><summary>Download</summary>
+        <div class="menu-body">
+          <a href="{{ selection.url('/runs/export.csv') }}">These runs (CSV, one row each)</a>
+          <a href="{{ selection.url('/runs/ethoscopy.csv') }}">Their tubes as ethoscopy metadata</a>
+        </div></details>
+      <details class="menu"><summary>Label these {{ total|int }}</summary>
+        <div class="menu-body">{{ label_form('run', all_labels, request.url.path ~ '?' ~ query, query=query, button='Label all ' ~ (total|int) ~ ' runs') }}</div></details>
     </div>
     {{ chips(selection, path, target) }}
     <div class="scroll">
-    <table>
+    <table id="runs-table">
       <thead><tr>
-        {{ sort_header("Start (lab clock)", "start", selection, path, target) }}
+        {{ sort_header("Start", "start", selection, path, target) }}
         {{ sort_header("Machine", "machine", selection, path, target) }}
-        {{ sort_header("Experimenter", "experimenter", selection, path, target) }}
-        <th>Location</th><th>Stack</th><th>Interactor</th>
+        {{ sort_header("Who", "experimenter", selection, path, target) }}
         {{ sort_header("Category", "category", selection, path, target) }}
+        <th>Labels</th>
         {{ sort_header("Rows", "rows", selection, path, target, True) }}
-        {{ sort_header("Files", "sources", selection, path, target, True) }}
-        {{ sort_header("Size", "size", selection, path, target, True) }}
-        {{ sort_header("Length", "length", selection, path, target, True) }}
+        <th class="opt">Location</th><th class="opt">Stack</th><th class="opt">Interactor</th>
+        {{ sort_header("Files", "sources", selection, path, target, True, True) }}
+        {{ sort_header("Size", "size", selection, path, target, True, True) }}
+        {{ sort_header("Length", "length", selection, path, target, True, True) }}
       </tr></thead>
       <tbody>
-      {% for r in rows %}
+      {% for r in rows %}{% set people = row_people[r.id] %}
         <tr>
           <td class="nowrap"><a href="/runs/{{ r.id }}">{{ (r.start_local or '–')|replace('T', ' ') }}</a></td>
           <td>{{ r.machine_name or '–' }}</td>
-          <td>{{ r.experimenter or '' }}</td>
-          <td>{{ r.location or '' }}</td>
-          <td>{{ r.stack or '' }}</td>
-          <td>{{ r.interactor or '' }}</td>
+          <td>{% if people %}{{ person_chips(people) }}{% else %}<span class="secondary">{{ r.experimenter or '' }}</span>{% endif %}</td>
           <td>{{ category(r.category) }}</td>
+          <td>{{ label_chips(row_labels[r.id]) }}</td>
           <td class="num">{{ r.n_rows|int }}</td>
-          <td class="num">{{ r.n_sources|int }}</td>
-          <td class="num">{{ r.size|size }}</td>
-          <td class="num">{{ r.duration_h|hours }}</td>
+          <td class="opt">{{ r.location or '' }}</td>
+          <td class="opt">{{ r.stack or '' }}</td>
+          <td class="opt">{{ r.interactor or '' }}</td>
+          <td class="num opt">{{ r.n_sources|int }}</td>
+          <td class="num opt">{{ r.size|size }}</td>
+          <td class="num opt">{{ r.duration_h|hours }}</td>
         </tr>
       {% else %}
-        <tr><td colspan="11" class="muted">No runs match these filters.</td></tr>
+        <tr><td colspan="12" class="muted">No runs match these filters.</td></tr>
       {% endfor %}
       </tbody>
     </table>

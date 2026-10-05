@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_macros.html" import notes_block %}
+{% block title %}{{ person.name }} · Ethoscope census{% endblock %}
+{% block content %}
+{% set here = request.url.path %}{% set f = fold(categories) %}
+<p><a href="/people">← all people</a></p>
+<h1>{{ person.name }}</h1>
+<p class="summary"><a href="/runs?person={{ person.name|urlencode }}"><strong>{{ n_runs|int }}</strong> runs</a>
+  · <a href="/runs?person={{ person.name|urlencode }}&category=single&category=multiple">claimed {{ f.claimed|int }}</a>
+  · <a href="/runs?person={{ person.name|urlencode }}&category=orphan">orphan {{ f.orphan|int }}</a>
+  · <a href="/runs?person={{ person.name|urlencode }}&category=misfire&category=empty">misfire {{ f.failed|int }}</a>
+  · <a href="/files?person={{ person.name|urlencode }}">{{ files|sum(attribute='n')|int }} metadata files</a></p>
+<p>{% for a in aliases %}<span class="chip small" title="{{ a.kind }}">{{ a.value }} <span class="muted">{{ a.kind }}</span></span>{% endfor %}</p>
+{% if n_runs %}<section class="card"><div class="scroll chart-wrap">{{ chart }}</div>{{ legend() }}</section>{% endif %}
+
+<details class="card section"><summary><h2>Machines used and metadata files</h2></summary>
+  <div class="grid2">
+    <table><thead><tr><th>Machine</th><th class="num">Runs</th></tr></thead><tbody>
+      {% for m in machines %}<tr><td><a href="/runs?person={{ person.name|urlencode }}&machine={{ m.machine_name|urlencode }}">{{ m.machine_name }}</a></td><td class="num">{{ m.n|int }}</td></tr>{% endfor %}</tbody></table>
+    <table><thead><tr><th>Metadata files</th><th class="num">Files</th></tr></thead><tbody>
+      {% for x in files %}<tr><td><a href="/files?person={{ person.name|urlencode }}&outcome={{ x.outcome|urlencode }}">{{ x.outcome }}</a></td><td class="num">{{ x.n|int }}</td></tr>{% endfor %}</tbody></table>
+  </div>
+</details>
+
+<details class="card section"><summary><h2>Names, rename, merge</h2></summary>
+  <table><tbody>
+  {% for a in aliases %}<tr><td>{{ a.kind }}</td><td>{{ a.value }}</td><td>
+    <form method="post" action="/people/{{ person.id }}/alias/remove" class="inline-form"><input type="hidden" name="kind" value="{{ a.kind }}"><input type="hidden" name="value" value="{{ a.value }}"><button class="link" type="submit">remove</button></form></td></tr>{% endfor %}
+  </tbody></table>
+  <form method="post" action="/people/{{ person.id }}/alias" class="inline-form">
+    <select name="kind" aria-label="Kind"><option value="experimenter">experimenter (typed on node)</option><option value="home">home folder</option><option value="other">other</option></select>
+    <input type="text" name="value" placeholder="name as it appears" required aria-label="Alias"><button type="submit">Add name</button></form>
+  <form method="post" action="/people/{{ person.id }}/rename" class="inline-form"><input type="text" name="name" value="{{ person.name }}" aria-label="Name"><button type="submit">Rename</button></form>
+  {% if others %}<form method="post" action="/people/{{ person.id }}/merge" class="inline-form">Merge into
+    <select name="into">{% for o in others %}<option value="{{ o.id }}">{{ o.name }}</option>{% endfor %}</select><button type="submit">Merge</button></form>{% endif %}
+  <form method="post" action="/people/{{ person.id }}/delete" class="inline-form"><button type="submit">Delete this person</button> <span class="muted">(can be undone from Changes)</span></form>
+</details>
+
+<details class="card section" {{ 'open' if notes }}><summary><h2>Notes{% if notes %} ({{ notes|length }}){% endif %}</h2></summary>
+  {{ notes_block(notes, 'person', person.id|string, here) }}
+</details>
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}People · Ethoscope census{% endblock %}
+{% block content %}
+<h1>People</h1>
+<p class="muted">A person gathers the names they appear under: their home folders and the experimenter names typed on the nodes.</p>
+<section class="card scroll">
+  <table>
+    <thead><tr><th>Name</th><th>Also known as</th><th class="num">Runs</th><th class="num">Orphans</th><th class="num">Metadata files</th></tr></thead>
+    <tbody>
+    {% for p in people %}
+      <tr><td><a class="who" href="/people/{{ p.person.id }}">{{ p.person.name }}</a></td>
+        <td>{% for a in p.aliases %}<span class="chip small" title="{{ a.kind }}">{{ a.value }} <span class="muted">{{ 'node' if a.kind == 'experimenter' else a.kind }}</span></span>{% endfor %}</td>
+        <td class="num"><a href="/runs?person={{ p.person.name|urlencode }}">{{ p.n_runs|int }}</a></td>
+        <td class="num"><a href="/runs?person={{ p.person.name|urlencode }}&category=orphan">{{ p.counts.get('orphan', 0)|int }}</a></td>
+        <td class="num"><a href="/files?person={{ p.person.name|urlencode }}">{{ p.n_files|int }}</a></td></tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No people yet: start from the suggestions below.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% set several = [] %}{% set single = [] %}{% for g in groups %}{% if g.members|length > 1 %}{% set _ = several.append(g) %}{% else %}{% set _ = single.append(g) %}{% endif %}{% endfor %}
+<details class="card section" open><summary><h2>Names that probably belong together ({{ several|length }})</h2></summary>
+  <p class="muted">Experimenter names and home folders that differ only in case or punctuation, or that follow the first.last ↔ flast pattern. Untick anything that does not belong.</p>
+  {% for g in several %}
+  <form method="post" action="/people" class="group">
+    <div class="members">{% for m in g.members %}
+      <label class="member"><input type="checkbox" name="alias" value="{{ m.kind }}:{{ m.value }}" {{ 'checked' if not m.person }}>
+        <strong>{{ m.value }}</strong> <span class="muted">{{ m.kind }} · {{ m.n|int }} {{ m.unit }}{% if m.person %} · already {{ m.person }}{% endif %}</span></label>
+    {% endfor %}</div>
+    <div class="actions">
+      <input type="text" name="name" value="{{ g.suggested }}" aria-label="Person's name">
+      <button type="submit">Create person</button>
+      {% if people %}<span class="muted">or add them to</span>
+      <select name="person_id" aria-label="Existing person"><option value="">choose…</option>{% for p in people %}<option value="{{ p.person.id }}" {{ 'selected' if p.person.name in g.people }}>{{ p.person.name }}</option>{% endfor %}</select>
+      <button type="submit" formaction="/people/join">Add</button>{% endif %}
+    </div>
+  </form>
+  {% else %}<p class="muted">No groups left to review.</p>{% endfor %}
+</details>
+<details class="card section"><summary><h2>Other names not yet assigned ({{ single|length }})</h2></summary>
+  {% for g in single %}
+  <form method="post" action="/people" class="group">
+    <div class="members">{% for m in g.members %}
+      <label class="member"><input type="checkbox" name="alias" value="{{ m.kind }}:{{ m.value }}" {{ 'checked' if not m.person }}>
+        <strong>{{ m.value }}</strong> <span class="muted">{{ m.kind }} · {{ m.n|int }} {{ m.unit }}{% if m.person %} · already {{ m.person }}{% endif %}</span></label>
+    {% endfor %}</div>
+    <div class="actions">
+      <input type="text" name="name" value="{{ g.suggested }}" aria-label="Person's name">
+      <button type="submit">Create person</button>
+      {% if people %}<span class="muted">or add them to</span>
+      <select name="person_id" aria-label="Existing person"><option value="">choose…</option>{% for p in people %}<option value="{{ p.person.id }}" {{ 'selected' if p.person.name in g.people }}>{{ p.person.name }}</option>{% endfor %}</select>
+      <button type="submit" formaction="/people/join">Add</button>{% endif %}
+    </div>
+  </form>
+  {% endfor %}
+</details>
+
+<details class="card section"><summary><h2>New person</h2></summary>
+  <form method="post" action="/people" class="inline-form"><input type="text" name="name" placeholder="Name" required aria-label="Name"><button type="submit">Create</button></form>
+</details>
+{% endblock %}

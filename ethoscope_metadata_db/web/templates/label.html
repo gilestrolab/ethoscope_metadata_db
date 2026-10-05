@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% from "_macros.html" import notes_block %}
+{% block title %}{{ label.name }} · Ethoscope census{% endblock %}
+{% block content %}
+{% set here = request.url.path %}{% set c = categories %}
+<p><a href="/labels">← all labels</a></p>
+<h1>{{ label.name }} <span class="muted">({{ label.kind }})</span></h1>
+{% if label.description or label.doi or label.authors %}<p>{{ label.description or '' }}
+  {% if label.authors %}<br><span class="muted">{{ label.authors }}</span>{% endif %}
+  {% if label.doi %}<br><a href="{{ label.doi if label.doi.startswith('http') else 'https://doi.org/' ~ label.doi }}">{{ label.doi }}</a>{% endif %}</p>{% endif %}
+<p class="summary"><a href="/runs?label={{ label.name|urlencode }}"><strong>{{ n_runs|int }}</strong> runs</a>
+  · <a href="/files?label={{ label.name|urlencode }}">{{ n_files|int }} metadata files</a>
+  {% set f = fold(c) %} · claimed {{ f.claimed|int }} · orphan {{ f.orphan|int }}
+  · <a href="/runs/ethoscopy.csv?label={{ label.name|urlencode }}">download ethoscopy metadata</a></p>
+{% if n_runs %}<section class="card"><div class="scroll chart-wrap">{{ chart }}</div>{{ legend() }}</section>{% endif %}
+
+<details class="card section"><summary><h2>What it is attached to ({{ links|length }})</h2></summary>
+  <p class="muted">Runs come from: {% for k, n in via.items() %}{{ k }} {{ n|int }}{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+  <table>
+    <tbody>
+    {% for l in links %}
+      <tr><td>{{ l.target_type }}</td><td class="path mono">{{ l.target }}</td>
+        <td><form method="post" action="/labels/{{ label.id }}/unlink" class="inline-form">
+          <input type="hidden" name="target_type" value="{{ l.target_type }}"><input type="hidden" name="target" value="{{ l.target }}"><input type="hidden" name="back" value="{{ here }}">
+          <button class="link" type="submit">remove</button></form></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</details>
+
+<details class="card section"><summary><h2>Edit, merge or delete</h2></summary>
+  <form method="post" action="/labels/{{ label.id }}/edit" class="stack-form">
+    <label>Name <input type="text" name="name" value="{{ label.name }}" required></label>
+    <label>Kind <select name="kind">{% for k in ('tag', 'project') %}<option value="{{ k }}" {{ 'selected' if k == label.kind }}>{{ k }}</option>{% endfor %}</select></label>
+    <label>DOI <input type="text" name="doi" value="{{ label.doi or '' }}"></label>
+    <label>Authors <input type="text" name="authors" value="{{ label.authors or '' }}"></label>
+    <label>Description <textarea name="description" rows="2">{{ label.description or '' }}</textarea></label>
+    <button type="submit">Save</button>
+  </form>
+  {% if others %}
+  <form method="post" action="/labels/{{ label.id }}/merge" class="inline-form">
+    Merge into <select name="into">{% for o in others %}<option value="{{ o.id }}">{{ o.name }}</option>{% endfor %}</select>
+    <button type="submit">Merge</button></form>
+  {% endif %}
+  <form method="post" action="/labels/{{ label.id }}/delete" class="inline-form"><button type="submit">Delete this label</button>
+    <span class="muted">(can be undone from Changes)</span></form>
+</details>
+
+<details class="card section" {{ 'open' if notes }}><summary><h2>Notes{% if notes %} ({{ notes|length }}){% endif %}</h2></summary>
+  {{ notes_block(notes, 'label', label.id|string, here) }}
+</details>
+{% endblock %}

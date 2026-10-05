@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Changes · Ethoscope census{% endblock %}
+{% block content %}
+<h1>Changes</h1>
+<p class="muted">Every edit to labels, people and notes, newest first. Undo reverses one change.</p>
+<section class="card scroll">
+  <table>
+    <thead><tr><th>When</th><th>Who</th><th>What</th><th></th></tr></thead>
+    <tbody>
+    {% for c in changes %}
+      <tr class="{{ 'muted' if c.undone_at }}"><td class="nowrap">{{ c.at|replace('T', ' ') }}</td><td>{{ c.who or '' }}</td><td>{{ c.summary }}</td>
+        <td>{% if c.undone_at %}undone by {{ c.undone_by or 'someone' }}{% else %}<form method="post" action="/changes/{{ c.id }}/undo" class="inline-form"><button type="submit">Undo</button></form>{% endif %}</td></tr>
+    {% else %}
+      <tr><td colspan="4" class="muted">No changes yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

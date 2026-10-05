@@ -11,6 +11,7 @@ from fastapi.responses import Response
 
 from .. import queries
 from ..app import get_db, render
+from ..curation import views
 from ..filters import PER_PAGE, Selection, facet_counts, fetch_page
 
 router = APIRouter()
@@ -34,6 +35,7 @@ def _selection(request: Request) -> Selection:
 def files(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     selection = _selection(request)
     rows, total = fetch_page(conn, queries.FILES, selection, LIST_COLUMNS)
+    ids = [r["id"] for r in rows]
     context = {
         "selection": selection,
         "table": queries.FILES,
@@ -41,6 +43,10 @@ def files(request: Request, conn: sqlite3.Connection = Depends(get_db)):
         "total": total,
         "pages": max(1, math.ceil(total / PER_PAGE)),
         "facets": facet_counts(conn, queries.FILES, selection),
+        "row_labels": views.labels_by_id(conn, "file_label", ids),
+        "row_people": views.people_by_id(conn, "file_person", ids),
+        "all_labels": views.all_labels(conn),
+        "query": str(request.query_params),
     }
     partial = request.headers.get("HX-Request") == "true"
     return render(request, "_files_results.html" if partial else "files.html", **context)
@@ -65,4 +71,12 @@ def file(request: Request, file_id: int, conn: sqlite3.Connection = Depends(get_
     detail = queries.file_detail(conn, file_id)
     if detail is None:
         raise HTTPException(404, "No such metadata file in the census")
-    return render(request, "file.html", **detail)
+    return render(
+        request,
+        "file.html",
+        **detail,
+        labels=views.labels_by_id(conn, "file_label", [file_id])[file_id],
+        people=views.people_by_id(conn, "file_person", [file_id])[file_id],
+        notes=views.notes(conn, "file", detail["file"]["path"]),
+        all_labels=views.all_labels(conn),
+    )

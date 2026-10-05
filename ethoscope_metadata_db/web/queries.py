@@ -11,7 +11,7 @@ import pandas as pd
 
 from ..census import report
 from ..census.normalise import normalise_machine_name
-from .filters import Facet, Selection, Table, where
+from .filters import Facet, LinkFacet, Selection, Table, where
 
 CLAIMED = ("single", "multiple")
 CATEGORY_ORDER = (
@@ -26,19 +26,33 @@ CATEGORY_ORDER = (
 )
 METADATA_OUTCOMES = ("all matched", "some unmatched", "none matched", "empty")
 
+RUN_LABEL = LinkFacet(
+    "label", "id", "Label", limit=30, link="cur.run_label", entity="cur.label", entity_id="label_id"
+)
+RUN_PERSON = LinkFacet(
+    "person",
+    "id",
+    "Person",
+    limit=30,
+    link="cur.run_person",
+    entity="cur.person",
+    entity_id="person_id",
+)
 RUNS = Table(
     name="db_summary",
     facets=(
         Facet("category", "category", "Category"),
-        Facet("year", "year", "Year", limit=20, by_value=True),
+        RUN_LABEL,
+        RUN_PERSON,
+        Facet("year", "year", "Year", limit=30, by_value=True),
+        Facet("machine", "machine_name", "Machine", limit=30),
         Facet("month", "month", "Month", limit=0),
         Facet("day", "substr(start_local, 1, 10)", "Day", limit=0),
-        Facet("stack", "stack", "Camera stack"),
-        Facet("experimenter", "experimenter", "Experimenter", limit=15),
-        Facet("machine", "machine_name", "Machine", limit=15),
-        Facet("location", "location", "Location", limit=10),
-        Facet("interactor", "interactor", "Interactor", limit=10),
-        Facet("rois", "n_rois", "ROIs", limit=8),
+        Facet("experimenter", "experimenter", "Experimenter (as typed)", limit=30, primary=False),
+        Facet("stack", "stack", "Camera stack", primary=False),
+        Facet("location", "location", "Location", limit=30, primary=False),
+        Facet("interactor", "interactor", "Interactor", limit=30, primary=False),
+        Facet("rois", "n_rois", "ROIs", limit=8, primary=False),
     ),
     text_columns=("path", "machine_name", "experimenter", "location", "homes"),
     sorts={
@@ -58,11 +72,29 @@ FILES = Table(
     name="file_summary",
     facets=(
         Facet("outcome", "outcome", "Outcome"),
+        LinkFacet(
+            "label",
+            "id",
+            "Label",
+            limit=30,
+            link="cur.file_label",
+            entity="cur.label",
+            entity_id="label_id",
+        ),
+        LinkFacet(
+            "person",
+            "id",
+            "Person",
+            limit=30,
+            link="cur.file_person",
+            entity="cur.person",
+            entity_id="person_id",
+        ),
         Facet("tag", "tag", "Location"),
-        Facet("home", "home", "Home", limit=15),
-        Facet("year", "year", "First year", limit=20, by_value=True),
-        Facet("order", "date_order", "Date order", limit=8),
-        Facet("status", "status", "Status", limit=8),
+        Facet("year", "year", "First year", limit=30, by_value=True),
+        Facet("home", "home", "Home folder", limit=30, primary=False),
+        Facet("order", "date_order", "Date order", limit=8, primary=False),
+        Facet("status", "status", "Status", limit=8, primary=False),
     ),
     text_columns=("path", "sheet", "home"),
     sorts={
@@ -204,8 +236,14 @@ def run_detail(conn: sqlite3.Connection, db_id: int) -> dict[str, Any] | None:
         group["files"].setdefault(claim["file_id"], (claim["path"], claim["row_idx"]))
         if claim["note"]:
             group["notes"].add(claim["note"])
+    shown = {"genotype": False, "sex": False, "treatment": False, "other": False}
     for tube in tubes.values():
         tube["groups"] = sorted(tube["groups"].values(), key=lambda g: -len(g["files"]))
+        for g in tube["groups"]:
+            g["other"] = sorted(json.loads(g["other_json"]).items()) if g["other_json"] else []
+            for key in ("genotype", "sex", "treatment"):
+                shown[key] |= bool(g[key])
+            shown["other"] |= bool(g["other"])
         keys = {
             re.sub(r"[^a-z0-9]", "", (g["genotype"] or "").lower())
             for g in tube["groups"]
@@ -231,6 +269,7 @@ def run_detail(conn: sqlite3.Connection, db_id: int) -> dict[str, Any] | None:
         ),
         "passed_over": {k: len(v) for k, v in passed_over.items()},
         "same_day": same_day,
+        "shown": shown,
     }
 
 

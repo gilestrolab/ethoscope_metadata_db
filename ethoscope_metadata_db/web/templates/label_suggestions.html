@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Project suggestions · Ethoscope census{% endblock %}
+{% block content %}
+<p><a href="/labels">← all labels</a></p>
+<h1>Folders that look like projects</h1>
+<p class="muted">Folders holding at least three metadata files, biggest first; folders already labelled are not shown. Labelling a folder covers every file in it, and every run those files claim.</p>
+<form method="get" action="/labels/suggestions" class="toolbar"><input type="search" name="q" value="{{ q }}" placeholder="Filter folders…" aria-label="Filter folders"></form>
+<section class="card scroll">
+  <table>
+    <thead><tr><th>Folder</th><th>Home</th><th class="num">Files</th><th>Make it a label</th></tr></thead>
+    <tbody>
+    {% for s in suggestions %}
+      <tr><td class="path" title="{{ s.folder }}">{{ s.relative }}</td><td>{{ s.home }} <span class="muted">{{ s.tag }}</span></td><td class="num">{{ s.n_files|int }}</td>
+        <td><form method="post" action="/labels/suggestions/accept" class="inline-form">
+          <input type="hidden" name="folder" value="{{ s.folder }}">
+          <input type="text" name="name" value="{{ s.name }}" aria-label="Label name">
+          <select name="kind" aria-label="Kind"><option value="project">project</option><option value="tag">tag</option></select>
+          <button type="submit">Label</button></form></td></tr>
+    {% else %}
+      <tr><td colspan="4" class="muted">No suggestions.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
