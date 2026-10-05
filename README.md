@@ -40,11 +40,12 @@ The second class is the **metadata_db_server** which runs a web based UI
 Instructions on to set it up and run it can be found [here](https://www.notion.so/giorgiogilestro/The-Metadata-Database-Server-cafac3d16ca04c0b8d4364e7624d7151).
 
 ## The ethoscope census (v2, in development)
-`ethocensus` indexes every ethoscope database, discovers metadata files in user homes (those
-with ethoscopy's `machine_name`, `date`, `region_id` columns), and matches each metadata row
+`ethocensus` indexes every ethoscope database, discovers metadata files in user homes (csv, tsv,
+txt, xlsx/xls sheets with ethoscopy's `machine_name`, `date`, `region_id` columns), and matches each metadata row
 (one fly) to the run that started on its date, the last of the day unless a `time` column says
-otherwise. Every row gets an explicit status (`unique`, `ambiguous`, `superseded`,
-`roi_missing`, `not_found`, ...). Dates are dd/mm/yyyy (or ISO). It only ever reads the results
+otherwise. Every row gets an explicit status (`unique`, `ambiguous`, `date_ambiguous`,
+`roi_missing`, `not_found`, ...); copies of a run and passed-over false starts are linked as
+`duplicate` and `superseded`. It only ever reads the results
 tree and the homes; everything it learns goes into its own SQLite file. See `PLANNING.md`.
 
 ```
@@ -57,7 +58,31 @@ ethocensus --census census.sqlite query "genotype in ['CS', 'w1118'] and stack =
 ```
 
 The query output uses ethoscopy's metadata columns (`machine_name`, `date`, `time`,
-`region_id`) plus `path`, the database file. Run the tests with `pip install -e ".[test]" && pytest`.
+`region_id`) plus `path`, the database file.
+
+When a second copy of the results tree or of the homes holds a few files the main one lacks,
+add only those (one path per line, relative to the root) so no run is counted twice; skip
+directories by name with `--exclude`:
+
+```
+ethocensus --census census.sqlite scan-dbs /mnt/backup/results --files-from missing_dbs.txt
+ethocensus --census census.sqlite discover /home --exclude secrets --exclude cache
+```
+
+Record dates as three columns, `day`, `month` and `year`: a single date cell is rewritten by
+spreadsheets in the computer's locale, and `05/01/2024` can then mean 5 January or 1 May. Files
+with a single `date` column are still read: day/month strings follow the order the sheet's own
+unambiguous dates show, and a date that stays ambiguous is matched both ways and flagged
+`date_ambiguous` if the month-first reading finds a run. Runs are dated by the start recorded in
+their METADATA, on the lab's clock (`match --timezone`, default `Europe/London`), not by the
+folder stamp, which is sometimes wrong. Each database also records who ran it and where
+(`experimenter`, `location`, as typed on the node), which shows whose home an unannotated run
+belongs to. `discover --no-txt` skips `.txt` files. rethomics exports (`machine_name`, `datetime`,
+`region_id`) are read too: `datetime` gives both the day and the run's start time.
+
+`report --out-dir` also writes `header_counts.csv` (column names in use, accepted or not) and
+`date_shapes.csv` (date formats, digits shown as 9), which show what the metadata looks like
+without showing any value. Run the tests with `pip install -e ".[test]" && pytest`.
 
 ## Installation
 Install with pip

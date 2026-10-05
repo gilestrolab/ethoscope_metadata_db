@@ -1,3 +1,4 @@
+import json
 import os
 
 from conftest import write_text
@@ -26,6 +27,28 @@ class TestWalk:
         assert [os.path.basename(p) for p, _ in found] == ["timed.tsv"]
         assert list(discover.iter_tabular_files(homes_root, {".tsv"}, max_bytes=10)) == []
 
+    def test_exclude_directories(self, homes_root):
+        found = {os.path.basename(p) for p, _ in discover.iter_tabular_files(homes_root)}
+        kept = {
+            os.path.basename(p)
+            for p, _ in discover.iter_tabular_files(homes_root, exclude=["notes", "bob"])
+        }
+        assert found - kept == {"aliased.csv", "shopping.csv", "flies.xlsx"}
+
+    def test_listed_paths_only(self, homes_root):
+        listed = ["bob/flies.xlsx", os.path.join(homes_root, "carol", "timed.tsv"), "bob/x.png"]
+        found = list(discover.iter_tabular_files(homes_root, paths=listed))
+        assert [(os.path.basename(p), home) for p, home in found] == [
+            ("flies.xlsx", "bob"),
+            ("timed.tsv", "carol"),
+        ]
+
+    def test_broken_symlink_skipped(self, homes_root, caplog):
+        os.symlink("/nonexistent/target.csv", os.path.join(homes_root, "carol", "gone.csv"))
+        found = {os.path.basename(p) for p, _ in discover.iter_tabular_files(homes_root)}
+        assert "gone.csv" not in found and "timed.tsv" in found
+        assert "cannot stat" in caplog.text
+
 
 class TestDiscover:
     def test_scores_and_statuses(self, homes_root, census):
@@ -44,6 +67,21 @@ class TestDiscover:
         assert status[("flies.xlsx", "readme")]["status"] == "rejected"
         sha = census.execute("SELECT DISTINCT sha256 FROM meta_file WHERE path LIKE '%flies.xlsx'")
         assert len(sha.fetchall()) == 1
+
+    def test_headers_recorded_for_every_sheet(self, homes_root, census):
+        discover.discover(census, homes_root)
+        rows = census.execute("SELECT path, sheet, columns_raw FROM meta_file").fetchall()
+        headers = {(os.path.basename(r[0]), r[1]): json.loads(r[2]) for r in rows}
+        assert headers[("aliased.csv", "")] == ["Date", "Ethoscope", "ROI"]
+        assert headers[("titled.csv", "")] == ["Sleep deprivation", "January", "column_3"]
+        assert headers[("flies.xlsx", "readme")] == ["About"]
+
+    def test_non_utf8_name_skipped(self, homes_root, census):
+        folder = os.path.join(homes_root, "carol").encode()
+        with open(os.path.join(folder, b"donn\xe9es.csv"), "w") as handle:  # latin-1 name
+            handle.write("date,machine_name,region_id\n2024-01-05,7,1\n")
+        counts = discover.discover(census, homes_root)
+        assert counts["bad_name"] == 1 and counts["registered"] == 6
 
     def test_unreadable_file_recorded(self, tmp_path, census):
         bad = tmp_path / "h" / "dave" / "broken.xlsx"
@@ -78,6 +116,29 @@ class TestIngest:
         assert row["note"] is None
         # Second run has nothing left to do.
         assert discover.ingest_candidates(census)["files"] == 0
+
+    def test_reparse_keeps_provenance(self, homes_root, census):
+        discover.discover(census, homes_root)
+        discover.ingest_candidates(census)
+        census.execute("UPDATE meta_row SET date = NULL")
+        counts = discover.ingest_candidates(census, reparse=True)
+        assert counts["sheets"] == 3 and counts["rows"] == 16
+        assert census.execute("SELECT count(*) FROM meta_row WHERE date IS NULL").fetchone()[0] == 1
+        assert _statuses(census)[("metadata.csv", "")]["home"] == "alice"
+        assert _statuses(census)[("aliased.csv", "")]["status"] == "rejected"
+
+    def test_reparse_rechecks_rejected_headers(self, tmp_path, census):
+        path = write_text(
+            str(tmp_path / "h" / "u" / "linked.csv"),
+            "machine_name,datetime,region_id\nETHOSCOPE_007,2024-01-05 10:00:00,1\n",
+        )
+        discover.discover(census, str(tmp_path / "h"))
+        # As a census built before ``datetime`` was accepted would have it.
+        census.execute("UPDATE meta_file SET status = 'rejected'")
+        assert discover.ingest_candidates(census)["sheets"] == 0
+        assert discover.ingest_candidates(census, reparse=True)["rows"] == 1
+        assert _statuses(census)[("linked.csv", "")]["status"] == "ingested"
+        assert os.path.exists(path)
 
     def test_ingest_named_file(self, tmp_path, census):
         path = write_text(str(tmp_path / "f.csv"), "date,machine_name,region_id\n2024-01-05,7,1\n")

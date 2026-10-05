@@ -13,7 +13,25 @@ import os
 import sqlite3
 from typing import Any, Iterable, Mapping
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "3"
+
+# In-place upgrades of older census files: from version -> (to version, statements).
+MIGRATIONS = {
+    "1": (
+        "2",
+        (
+            "ALTER TABLE meta_file ADD COLUMN date_order TEXT",
+            "ALTER TABLE meta_row ADD COLUMN date_alt TEXT",
+        ),
+    ),
+    "2": (
+        "3",
+        (
+            "ALTER TABLE db_file ADD COLUMN experimenter TEXT",
+            "ALTER TABLE db_file ADD COLUMN location TEXT",
+        ),
+    ),
+}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_info (
@@ -43,6 +61,8 @@ CREATE TABLE IF NOT EXISTS db_file (
     duration_h REAL,
     interactor TEXT,
     interactor_kwargs TEXT,
+    experimenter TEXT,
+    location TEXT,
     readable INTEGER NOT NULL DEFAULT 0,
     error TEXT,
     scanned_at TEXT
@@ -61,6 +81,7 @@ CREATE TABLE IF NOT EXISTS meta_file (
     columns_raw TEXT,
     column_map TEXT,
     header_row INTEGER,
+    date_order TEXT,
     score REAL,
     status TEXT NOT NULL,
     note TEXT,
@@ -74,6 +95,7 @@ CREATE TABLE IF NOT EXISTS meta_row (
     raw_json TEXT NOT NULL,
     date TEXT,
     date_status TEXT,
+    date_alt TEXT,
     start_time TEXT,
     machine_name TEXT,
     region_id INTEGER,
@@ -124,6 +146,8 @@ DB_FILE_COLUMNS = (
     "duration_h",
     "interactor",
     "interactor_kwargs",
+    "experimenter",
+    "location",
     "readable",
     "error",
     "scanned_at",
@@ -135,6 +159,7 @@ META_ROW_COLUMNS = (
     "raw_json",
     "date",
     "date_status",
+    "date_alt",
     "start_time",
     "machine_name",
     "region_id",
@@ -152,6 +177,8 @@ class SchemaVersionError(RuntimeError):
 def connect(path: str | os.PathLike[str]) -> sqlite3.Connection:
     """Open (creating if needed) a census database.
 
+    Older census files are migrated in place (see :data:`MIGRATIONS`).
+
     Args:
         path: Location of the census SQLite file.
 
@@ -159,23 +186,36 @@ def connect(path: str | os.PathLike[str]) -> sqlite3.Connection:
         A connection with foreign keys enabled and ``sqlite3.Row`` rows.
 
     Raises:
-        SchemaVersionError: If the file holds a different schema version.
+        SchemaVersionError: If the file holds a schema that cannot be migrated.
     """
     conn = sqlite3.connect(os.fspath(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_info'"
+    ).fetchone()
+    found = None
+    if row is not None:
+        version = conn.execute("SELECT value FROM schema_info WHERE key = 'version'").fetchone()
+        found = version["value"] if version else None
+    while found in MIGRATIONS:
+        # Reason: ALTER before SCHEMA, whose CREATE INDEX statements may need the new columns.
+        found, statements = MIGRATIONS[found]
+        for statement in statements:
+            conn.execute(statement)
+        conn.execute("UPDATE schema_info SET value = ? WHERE key = 'version'", (found,))
+        conn.commit()
     conn.executescript(SCHEMA)
-    row = conn.execute("SELECT value FROM schema_info WHERE key = 'version'").fetchone()
-    if row is None:
+    if found is None:
         conn.execute(
-            "INSERT INTO schema_info (key, value) VALUES ('version', ?)",
+            "INSERT OR REPLACE INTO schema_info (key, value) VALUES ('version', ?)",
             (SCHEMA_VERSION,),
         )
         conn.commit()
-    elif row["value"] != SCHEMA_VERSION:
+    elif found != SCHEMA_VERSION:
         conn.close()
         raise SchemaVersionError(
-            f"census file {path} has schema {row['value']}, expected {SCHEMA_VERSION}"
+            f"census file {path} has schema {found}, expected {SCHEMA_VERSION}"
         )
     return conn
 

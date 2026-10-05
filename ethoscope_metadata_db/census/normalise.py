@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-from typing import Any, NamedTuple
+from typing import Any, Iterable, NamedTuple
 
 import pandas as pd
 
@@ -18,8 +18,14 @@ import pandas as pd
 # range are not treated as dates (they are more likely ids or counts).
 _EXCEL_EPOCH = dt.date(1899, 12, 30)
 _EXCEL_MIN, _EXCEL_MAX = 36526, 73051
+# POSIX seconds for 2000-01-01 and 2100-01-01 (UTC): R writes POSIXct datetimes this way.
+_EPOCH_MIN, _EPOCH_MAX = 946684800, 4102444800
 
-_ISO_RE = re.compile(r"^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T].*)?$")
+_ISO_RE = re.compile(r"^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T_].*)?$")
+# A results-tree stamp (``2024-01-05_10-00-00``) written as a date: one run's start.
+_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_(\d{2}-\d{2}-\d{2})$")
+# A full date-time (rethomics ``datetime``): 2024-01-05 10:00:00, ...T10:00:00 or the stamp.
+_DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[ T_](\d{2}[:\-]\d{2}[:\-]\d{2})")
 _COMPACT_RE = re.compile(r"^(\d{4})(\d{2})(\d{2})$")
 _DMY_RE = re.compile(r"^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})(?:[ T].*)?$")
 _TIME_RE = re.compile(r"^(\d{1,2})[:.\-h](\d{2})(?:[:.\-m](\d{2}))?(?:\.\d+)?s?$")
@@ -46,11 +52,14 @@ class ParsedDate(NamedTuple):
 
     Attributes:
         date: The date, or ``None`` when missing or invalid.
-        status: One of ``ok``, ``invalid`` or ``missing``.
+        status: ``ok``, ``invalid``, ``missing``, or ``ambiguous`` for a
+            day/month string that reads as two different dates.
+        alt: For ``ambiguous``: the month-first reading (``date`` is day-first).
     """
 
     date: dt.date | None
     status: str
+    alt: dt.date | None = None
 
 
 def is_blank(value: Any) -> bool:
@@ -83,18 +92,61 @@ def _safe_date(year: int, month: int, day: int) -> dt.date | None:
         return None
 
 
-def parse_date(value: Any) -> ParsedDate:
+def day_month_parts(value: Any) -> tuple[int, int, int] | None:
+    """Return ``(first, second, year)`` of a day/month string, in written order.
+
+    ``05/01/2024`` gives ``(5, 1, 2024)`` whichever of day or month comes
+    first; anything else (ISO strings, numbers, datetimes) gives ``None``.
+    """
+    match = _DMY_RE.match(value.strip()) if isinstance(value, str) else None
+    return tuple(int(g) for g in match.groups()) if match else None
+
+
+def date_order(values: Iterable[Any]) -> str | None:
+    """Tell from a column's unambiguous day/month strings which order it uses.
+
+    A part above 12 can only be a day: ``25/03/2024`` shows day-first,
+    ``03/25/2024`` month-first.
+
+    Args:
+        values: The raw cells of one ``date`` column.
+
+    Returns:
+        ``"dmy"`` or ``"mdy"`` when the evidence points one way, ``"mixed"``
+        when it points both ways, ``"unknown"`` when every part is <= 12, and
+        ``None`` when the column has no day/month strings at all.
+    """
+    seen = day_first = month_first = False
+    for value in values:
+        parts = day_month_parts(value)
+        if parts:
+            seen = True
+            # Only a value readable one way is evidence (13/13/2024 is no date at all).
+            day_first |= parts[0] > 12 >= parts[1]
+            month_first |= parts[1] > 12 >= parts[0]
+    if not seen:
+        return None
+    return {(True, False): "dmy", (False, True): "mdy", (True, True): "mixed"}.get(
+        (day_first, month_first), "unknown"
+    )
+
+
+def parse_date(value: Any, order: str = "dmy") -> ParsedDate:
     """Parse a metadata date cell.
 
-    The lab convention is dd/mm/yyyy: day/month strings are always read day
-    first (``05/01/2024`` is 5 January; ``01/25/2024`` is invalid). Also
-    accepted: ``datetime``/``date`` objects (including pandas Timestamps),
-    Excel serial numbers, ISO strings (``2024-01-05``, ``2024/01/05``,
-    ``2024-01-05 00:00:00``) and compact ``20240105``. Separators may be
-    ``/``, ``-`` or ``.``; two-digit years are 20yy.
+    Day/month strings (``05/01/2024``) are read in ``order``: ``"dmy"`` (the
+    lab convention), ``"mdy"``, or ``"either"`` when the order is not known:
+    then a string valid one way only is read that way, and one valid both ways
+    (``05/01/2024``) is ``ambiguous``, with the day-first reading in ``date``
+    and the month-first one in ``alt``. Also accepted: ``datetime``/``date``
+    objects (including pandas Timestamps), Excel serial numbers, ISO strings
+    (``2024-01-05``, ``2024/01/05``, ``2024-01-05 00:00:00``, the
+    results-tree stamp ``2024-01-05_10-00-00``) and compact ``20240105``.
+    Separators may be ``/``, ``-`` or ``.``; two-digit years are 20yy.
 
     Args:
         value: The raw cell value.
+        order: How to read day/month strings: ``"dmy"``, ``"mdy"`` or ``"either"``.
 
     Returns:
         A :class:`ParsedDate`.
@@ -108,15 +160,52 @@ def parse_date(value: Any) -> ParsedDate:
 
     number = _as_number(value)
     text = str(value).strip()
-    for pattern, order in ((_COMPACT_RE, (0, 1, 2)), (_ISO_RE, (0, 1, 2)), (_DMY_RE, (2, 1, 0))):
+    for pattern in (_COMPACT_RE, _ISO_RE):
         match = pattern.match(text)
         if match:
-            parts = [int(g) for g in match.groups()]
-            parsed = _safe_date(*(parts[i] for i in order))
+            parsed = _safe_date(*(int(g) for g in match.groups()))
             return ParsedDate(parsed, "ok" if parsed else "invalid")
+    parts = day_month_parts(text)
+    if parts:
+        first, second, year = parts
+        day_first = _safe_date(year, second, first)
+        month_first = _safe_date(year, first, second)
+        if order == "either" and day_first and month_first and day_first != month_first:
+            return ParsedDate(day_first, "ambiguous", month_first)
+        if order == "mdy" or (order == "either" and not day_first):
+            parsed = month_first
+        else:
+            parsed = day_first
+        return ParsedDate(parsed, "ok" if parsed else "invalid")
     if number is not None and _EXCEL_MIN <= number < _EXCEL_MAX:
         return ParsedDate(_EXCEL_EPOCH + dt.timedelta(days=int(number)), "ok")
     return ParsedDate(None, "invalid")
+
+
+def date_from_parts(day: Any, month: Any, year: Any) -> ParsedDate:
+    """Build a date from separate ``day``, ``month`` and ``year`` cells.
+
+    This is the unambiguous way to record a date: unlike a single date cell,
+    it survives spreadsheets that rewrite dates in the computer's locale.
+
+    Args:
+        day: Day of the month (1-31).
+        month: Month number (1-12).
+        year: Four-digit year (two digits are read as 20yy).
+
+    Returns:
+        A :class:`ParsedDate`: ``missing`` when all three are blank,
+        ``invalid`` when any is not a whole number or they form no date.
+    """
+    cells = (day, month, year)
+    if all(is_blank(v) for v in cells):
+        return ParsedDate(None, "missing")
+    numbers = [_as_number(v) for v in cells]
+    if any(n is None or not float(n).is_integer() for n in numbers):
+        return ParsedDate(None, "invalid")
+    d, m, y = (int(n) for n in numbers)
+    parsed = _safe_date(y, m, d)
+    return ParsedDate(parsed, "ok" if parsed else "invalid")
 
 
 def parse_time(value: Any) -> str | None:
@@ -147,6 +236,61 @@ def parse_time(value: Any) -> str | None:
     if hour > 23 or minute > 59 or second > 59:
         return None
     return f"{hour:02d}:{minute:02d}:{second:02d}"
+
+
+def stamp_time(value: Any) -> str | None:
+    """Return the start time of a date cell written as a results-tree stamp.
+
+    ``2024-01-05_10-00-00`` names one run exactly, so its time can pick that
+    run when the sheet has no ``time`` column.
+
+    Args:
+        value: The raw ``date`` cell.
+
+    Returns:
+        ``HH:MM:SS``, or ``None`` when the cell is not a stamp.
+    """
+    match = _STAMP_RE.match(value.strip()) if isinstance(value, str) else None
+    return parse_time(match.group(1)) if match else None
+
+
+def datetime_time(value: Any) -> str | None:
+    """Return the time of a full date-time cell, as rethomics' ``datetime`` holds.
+
+    Unlike :func:`stamp_time` it also reads datetime objects: a ``datetime``
+    column always carries the run's start time, whereas a ``date`` cell
+    stored as a datetime only means a day.
+
+    Args:
+        value: The raw ``datetime`` cell.
+
+    Returns:
+        ``HH:MM:SS``, or ``None`` when the cell has no time.
+    """
+    if isinstance(value, dt.datetime):
+        return f"{value.hour:02d}:{value.minute:02d}:{value.second:02d}"
+    match = _DATETIME_RE.match(value.strip()) if isinstance(value, str) else None
+    return parse_time(match.group(1)) if match else None
+
+
+def parse_datetime(value: Any, order: str = "dmy") -> tuple[ParsedDate, str | None]:
+    """Read a rethomics ``datetime`` cell: the run's start date and time.
+
+    Accepts what :func:`parse_date` accepts, plus POSIX seconds as R writes a
+    ``POSIXct`` column, read as UTC (scopr parses result-tree stamps as UTC).
+
+    Args:
+        value: The raw ``datetime`` cell.
+        order: How to read day/month strings (see :func:`parse_date`).
+
+    Returns:
+        ``(parsed date, time as HH:MM:SS or None)``.
+    """
+    number = _as_number(value)
+    if number is not None and _EPOCH_MIN <= number < _EPOCH_MAX:
+        moment = dt.datetime.fromtimestamp(number, tz=dt.timezone.utc)
+        return ParsedDate(moment.date(), "ok"), f"{moment:%H:%M:%S}"
+    return parse_date(value, order), datetime_time(value)
 
 
 def normalise_machine_name(value: Any) -> str | None:

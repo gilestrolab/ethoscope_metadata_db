@@ -5,10 +5,11 @@ Walks a results root laid out as::
     <machine_id>/<machine_name>/<YYYY-MM-DD_HH-MM-SS>/<YYYY-MM-DD_HH-MM-SS>_<machine_id>.db
 
 and records, for each ``.db``, what its path says and what its ``METADATA``
-table says. Databases are opened strictly read-only with
-``mode=ro&immutable=1``. Because ``immutable=1`` ignores a write-ahead log, a
-database whose ``-wal`` sidecar is non-empty would be read without its newest
-rows: such files are recorded as unreadable rather than read inaccurately.
+and ``ROI_MAP`` tables say; the tracking tables (``ROI_n``) are never read.
+Databases are opened strictly read-only with ``mode=ro&immutable=1``. Because
+``immutable=1`` ignores a write-ahead log, a database whose ``-wal`` sidecar is
+non-empty would be read without its newest rows: such files are recorded as
+unreadable rather than read inaccurately.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ import re
 import sqlite3
 import urllib.parse
 from dataclasses import dataclass
-from typing import Any, Iterator
+from typing import Any, Iterable, Iterator
 
 from . import store
 from .normalise import kernel_stack
@@ -32,7 +33,6 @@ log = logging.getLogger(__name__)
 _STAMP_FMT = "%Y-%m-%d_%H-%M-%S"
 _STAMP_RE = r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}"
 _DB_NAME_RE = re.compile(rf"^({_STAMP_RE})_(\w+)\.db$")
-_ROI_TABLE_RE = re.compile(r"^ROI_(\d+)$")
 
 
 @dataclass(frozen=True)
@@ -76,12 +76,34 @@ def parse_results_path(rel_path: str) -> PathInfo:
     return PathInfo(machine_id, machine_name, start, conforms)
 
 
-def iter_db_files(results_root: str) -> Iterator[str]:
-    """Yield absolute paths of all ``*.db`` files below ``results_root``, sorted."""
+def _is_db_name(filename: str) -> bool:
+    # Hidden names are rsync temporaries or resource forks, never real runs.
+    return filename.endswith(".db") and not filename.startswith(".")
+
+
+def iter_db_files(results_root: str, paths: Iterable[str] | None = None) -> Iterator[str]:
+    """Yield absolute paths of ``*.db`` files below ``results_root``, sorted.
+
+    Hidden files and directories are skipped.
+
+    Args:
+        results_root: Root of the results tree.
+        paths: Only these files (absolute, or relative to ``results_root``)
+            instead of walking the whole tree; missing ones are logged and skipped.
+    """
+    if paths is not None:
+        for path in sorted(os.path.join(results_root, p) for p in paths):
+            if not _is_db_name(os.path.basename(path)):
+                continue
+            if not os.path.isfile(path):
+                log.warning("listed database not found: %s", path)
+                continue
+            yield os.path.abspath(path)
+        return
     for root, dirnames, filenames in os.walk(results_root):
-        dirnames.sort()
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
         for filename in sorted(filenames):
-            if filename.endswith(".db"):
+            if _is_db_name(filename):
                 yield os.path.join(root, filename)
 
 
@@ -134,26 +156,46 @@ def _class_name(value: Any) -> str | None:
     if value is None:
         return None
     text = str(value)
-    match = re.search(r"<class '([\w.]+)'>", text)
+    match = _CLASS_REPR_RE.search(text)
     if match:
         text = match.group(1)
     return text.rsplit(".", 1)[-1].strip() or None
 
 
-def _option_name(options: Any, key: str) -> tuple[str | None, Any]:
-    """Extract ``(class name, kwargs)`` for ``key`` from ``selected_options``."""
-    if isinstance(options, dict):
-        entry = options.get(key)
-        if isinstance(entry, dict):
-            return _class_name(entry.get("name") or entry.get("class")), entry.get("kwargs")
-        return _class_name(entry), None
-    if isinstance(options, str):
-        # Not a valid literal (e.g. contains <class ...> reprs): use a regex.
-        pattern = rf"['\"]{key}['\"]\s*:\s*\{{.*?['\"](?:name|class)['\"]\s*:\s*(<class '[\w.]+'>|['\"][\w.]+['\"])"
-        match = re.search(pattern, options, re.S)
-        if match:
-            return _class_name(match.group(1).strip("'\"")), None
-    return None, None
+_CLASS_REPR_RE = re.compile(r"<class '([\w.]+)'>")
+_ORDERED_DICT_RE = re.compile(r"^\s*OrderedDict\((.*)\)\s*$", re.S)
+
+
+def parse_options(text: str | None) -> dict[str, Any] | None:
+    """Parse the ``selected_options`` METADATA value into a dict.
+
+    Older firmware writes a plain dict literal. Newer firmware writes the
+    repr of an ``OrderedDict`` (``OrderedDict({...})`` or ``OrderedDict([(k,
+    v), ...])``) holding bare ``<class 'a.b.C'>`` values, which are turned
+    into strings first.
+
+    Returns:
+        The options, or ``None`` when the text cannot be read (never a guess).
+    """
+    value = literal_or_text(text)
+    if isinstance(value, str):
+        cleaned = _CLASS_REPR_RE.sub(r"'\1'", value)
+        match = _ORDERED_DICT_RE.match(cleaned)
+        value = literal_or_text(match.group(1) if match else cleaned)
+    if isinstance(value, list):
+        try:
+            value = dict(value)
+        except (TypeError, ValueError):
+            return None
+    return value if isinstance(value, dict) else None
+
+
+def _option_name(options: dict[str, Any] | None, key: str) -> tuple[str | None, Any]:
+    """Extract ``(class name, kwargs)`` for ``key`` from parsed ``selected_options``."""
+    entry = (options or {}).get(key)
+    if isinstance(entry, dict):
+        return _class_name(entry.get("name") or entry.get("class")), entry.get("kwargs")
+    return _class_name(entry), None
 
 
 def _camera_sensor(camera: Any) -> str | None:
@@ -163,6 +205,15 @@ def _camera_sensor(camera: Any) -> str | None:
                 return str(camera[key])
         return json.dumps(camera, sort_keys=True, default=str) if camera else None
     return str(camera) if camera not in (None, "") else None
+
+
+def _text(value: Any) -> str | None:
+    """A hardware fact as text; dicts and lists (newer firmware) become JSON."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, sort_keys=True, default=str)
+    return str(value).strip() or None
 
 
 def _float(value: Any) -> float | None:
@@ -195,7 +246,11 @@ def read_db_metadata(conn: sqlite3.Connection) -> dict[str, Any]:
     hardware = literal_or_text(meta.get("hardware_info"))
     if not isinstance(hardware, dict):
         hardware = {}
-    options = literal_or_text(meta.get("selected_options"))
+    options = parse_options(meta.get("selected_options"))
+    # Who ran the experiment and where (user name, incubator), as typed on the node.
+    info = literal_or_text(meta.get("experimental_info"))
+    if not isinstance(info, dict):
+        info = {}
     tracker, _ = _option_name(options, "tracker")
     interactor, interactor_kwargs = _option_name(options, "interactor")
 
@@ -206,20 +261,11 @@ def read_db_metadata(conn: sqlite3.Connection) -> dict[str, Any]:
 
     start = _float(meta.get("date_time"))
     stop = _float(meta.get("stop_date_time"))
+    # Reason: tracking tables (ROI_n) are never read, so runs without
+    # stop_date_time have no duration rather than one estimated from their rows.
     duration_h = (stop - start) / 3600 if start is not None and stop is not None else None
-    if duration_h is None:
-        last_t = 0
-        for table in tables:
-            if _ROI_TABLE_RE.match(table):
-                # rowid order follows insertion; avoids a full scan for MAX(t).
-                row = conn.execute(
-                    f'SELECT t FROM "{table}" ORDER BY rowid DESC LIMIT 1'
-                ).fetchone()
-                if row and row[0] is not None:
-                    last_t = max(last_t, float(row[0]))
-        duration_h = last_t / 3.6e6 if last_t else None
 
-    kernel = hardware.get("kernel")
+    kernel = _text(hardware.get("kernel"))
     return {
         "machine_id": meta.get("machine_id"),
         "machine_name": meta.get("machine_name"),
@@ -227,7 +273,7 @@ def read_db_metadata(conn: sqlite3.Connection) -> dict[str, Any]:
         "sw_version": meta.get("version"),
         "kernel": kernel,
         "camera_sensor": _camera_sensor(hardware.get("camera")),
-        "pi_version": hardware.get("pi_version"),
+        "pi_version": _text(hardware.get("pi_version")),
         "stack": kernel_stack(kernel),
         "tracker": tracker or _class_name(meta.get("tracker_class")),
         "gain": meta.get("gain_setting"),
@@ -236,6 +282,8 @@ def read_db_metadata(conn: sqlite3.Connection) -> dict[str, Any]:
         "roi_ids": json.dumps(roi_ids),
         "duration_h": round(duration_h, 3) if duration_h is not None else None,
         "interactor": interactor,
+        "experimenter": _text(info.get("name")),
+        "location": _text(info.get("location")),
         "interactor_kwargs": (
             json.dumps(interactor_kwargs, sort_keys=True, default=str)
             if interactor_kwargs
@@ -296,7 +344,10 @@ def index_db(db_path: str, results_root: str) -> dict[str, Any]:
 
 
 def scan_results(
-    conn: sqlite3.Connection, results_root: str, rescan: bool = False
+    conn: sqlite3.Connection,
+    results_root: str,
+    rescan: bool = False,
+    paths: Iterable[str] | None = None,
 ) -> dict[str, int]:
     """Index every database under ``results_root`` into the census.
 
@@ -307,12 +358,14 @@ def scan_results(
         conn: Census connection.
         results_root: Root of the results tree.
         rescan: Re-read every file even if unchanged.
+        paths: Index only these files (see :func:`iter_db_files`), e.g. the
+            runs a second copy of the tree holds that the first lacks.
 
     Returns:
         Counts: ``seen``, ``indexed``, ``unchanged``, ``unreadable``.
     """
     counts = {"seen": 0, "indexed": 0, "unchanged": 0, "unreadable": 0}
-    for db_path in iter_db_files(results_root):
+    for db_path in iter_db_files(results_root, paths):
         counts["seen"] += 1
         path = os.path.abspath(db_path)
         previous = store.get_db_file(conn, path)

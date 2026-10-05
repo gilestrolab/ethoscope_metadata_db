@@ -95,18 +95,56 @@ class TestReadTabular:
 
 
 class TestBuildRows:
-    def test_invalid_dates_noted(self, tmp_path, census):
+    def test_month_first_sheet_is_read_month_first(self, tmp_path, census):
         from ethoscope_metadata_db.census import discover
 
         path = write_text(
             str(tmp_path / "us.csv"),
-            "date,machine_name,region_id\n01/25/2024,7,1\n05/01/2024,7,2\n",
+            "date,machine_name,region_id\n01/25/2024,7,1\n05/01/2024,7,2\n13/13/2024,7,3\n",
         )
         discover.ingest_files(census, [path])
-        note = census.execute("SELECT note FROM meta_file").fetchone()[0]
-        assert note == "1 date(s) not readable as dd/mm/yyyy or ISO"
-        statuses = [r[0] for r in census.execute("SELECT date_status FROM meta_row ORDER BY id")]
-        assert statuses == ["invalid", "ok"]
+        sheet = census.execute("SELECT note, date_order FROM meta_file").fetchone()
+        assert sheet["date_order"] == "mdy" and sheet["note"] == "1 date(s) not readable"
+        rows = census.execute("SELECT date, date_status FROM meta_row ORDER BY id").fetchall()
+        assert [tuple(r) for r in rows] == [
+            ("2024-01-25", "ok"),
+            ("2024-05-01", "ok"),
+            (None, "invalid"),
+        ]
+
+    def test_unknown_order_keeps_both_readings(self, tmp_path):
+        path = write_text(
+            str(tmp_path / "u.csv"), "date,machine_name,region_id\n05/01/2024,7,1\n03/03/2024,7,2\n"
+        )
+        rows, info = self._rows(path)
+        assert info["date_order"] == "unknown"
+        assert [(r["date"], r["date_status"], r["date_alt"]) for r in rows] == [
+            ("2024-01-05", "ambiguous", "2024-05-01"),
+            ("2024-03-03", "ok", None),
+        ]
+
+    def test_day_month_year_columns(self, tmp_path):
+        path = write_text(
+            str(tmp_path / "split.csv"),
+            "machine_name,region_id,day,month,year,date\n"
+            "7,1,5,1,2024,05/01/2024\n"
+            "7,2,5,1,2024,2024-02-05\n"
+            "7,3,,,,\n",
+        )
+        rows, info = self._rows(path)
+        assert info["date_order"] == "split" and info["date_disagree"] == 1
+        assert [(r["date"], r["date_status"], r["date_alt"]) for r in rows] == [
+            ("2024-01-05", "ok", None),
+            ("2024-01-05", "ok", None),
+            (None, "missing", None),
+        ]
+
+    def test_day_month_year_satisfy_the_date_column(self):
+        mapping, _ = ingest.map_columns(["machine_name", "region_id", "day", "month", "year"])
+        assert ingest.is_metadata(mapping) and ingest.score_columns(mapping) == 1.0
+        mapping, _ = ingest.map_columns(["machine_name", "region_id", "day", "month"])
+        assert ingest.missing_columns(mapping) == ["date"]
+        assert ingest.score_columns(mapping) == 0.667
 
     def _rows(self, path):
         [(_, frame)] = ingest.read_tabular(path)
@@ -128,7 +166,73 @@ class TestBuildRows:
 
     def test_dates_and_times(self, homes_root):
         rows, info = self._rows(os.path.join(homes_root, "carol", "timed.tsv"))
-        assert info["date_status"] == {"ok": 5}
+        # 10/01/2024 is the sheet's only day/month string: 10 January or 1 October.
+        assert info["date_order"] == "unknown"
+        assert info["date_status"] == {"ambiguous": 1, "ok": 4}
+        assert (rows[0]["date"], rows[0]["date_alt"]) == ("2024-01-10", "2024-10-01")
         assert {r["date"] for r in rows} == {"2024-01-10"}
         assert rows[1]["start_time"] == "15:00:00" and rows[2]["start_time"] is None
         assert rows[3]["start_time"] == "12:00:00"
+
+    def test_stamp_as_date_picks_the_run(self, tmp_path):
+        path = write_text(
+            str(tmp_path / "stamped.csv"),
+            "date,machine_name,region_id,time\n"
+            "2024-01-10_09-00-00,7,1,\n"
+            "2024-01-10_09-00-00,7,2,15:00\n"
+            "2024-01-10,7,3,\n",
+        )
+        rows, info = self._rows(path)
+        assert info["date_status"] == {"ok": 3}
+        assert [r["start_time"] for r in rows] == ["09:00:00", "15:00:00", None]
+
+    def test_rethomics_datetime(self, tmp_path):
+        path = write_text(
+            str(tmp_path / "linked.txt"),
+            "id\tmachine_name\tmachine_id\tdatetime\tregion_id\ttime\n"
+            "a\tETHOSCOPE_007\t007cc\t2024-01-10 09:00:00\t1\t\n"
+            "b\tETHOSCOPE_007\t007cc\t2024-01-10 09:00:00\t2\t15:00\n",
+        )
+        rows, info = self._rows(path)
+        assert [(r["date"], r["start_time"]) for r in rows] == [
+            ("2024-01-10", "09:00:00"),
+            ("2024-01-10", "15:00:00"),  # an explicit time column wins
+        ]
+
+    def test_datetime_satisfies_the_date_column(self):
+        mapping, _ = ingest.map_columns(["machine_name", "datetime", "region_id"])
+        assert ingest.is_metadata(mapping)
+        mapping, _ = ingest.map_columns(["machine_name", "start_datetime", "region_id"])
+        assert ingest.missing_columns(mapping) == ["date"]
+
+    def test_rethomics_epoch_datetime(self, tmp_path):
+        # R writes POSIXct as seconds; 1704877200 is 2024-01-10 09:00:00 UTC.
+        path = write_text(
+            str(tmp_path / "posix.txt"),
+            "machine_name\tdatetime\tregion_id\nETHOSCOPE_007\t1704877200\t1\n",
+        )
+        rows, _ = self._rows(path)
+        assert (rows[0]["date"], rows[0]["start_time"]) == ("2024-01-10", "09:00:00")
+
+
+class TestRRowNames:
+    def test_write_table_row_names_are_aligned(self, tmp_path):
+        # write.table(row.names = TRUE): no header cell for the row names.
+        path = write_text(
+            str(tmp_path / "r.txt"),
+            "machine_name\tdate\tregion_id\n"
+            "1\tETHOSCOPE_007\t2024-01-05\t3\n"
+            "2\tETHOSCOPE_007\t2024-01-05\t4\n",
+        )
+        [(_, frame)] = ingest.read_tabular(path)
+        header, mapping, _ = ingest.find_header(frame)
+        rows, info = ingest.build_rows(frame, header, mapping)
+        assert info["columns"][0] == "column_1"
+        assert [(r["machine_name"], r["region_id"]) for r in rows] == [
+            ("ETHOSCOPE_007", 3),
+            ("ETHOSCOPE_007", 4),
+        ]
+
+    def test_trailing_delimiter_is_not_a_row_name(self):
+        rows = [["a", "b"], ["1", "2", ""], ["3", "4", ""]]
+        assert ingest._align_r_row_names(rows) == rows

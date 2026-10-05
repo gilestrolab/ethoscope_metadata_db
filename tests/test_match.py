@@ -1,4 +1,5 @@
 import datetime as dt
+import os
 
 import pytest
 
@@ -95,13 +96,16 @@ def _row(**kw):
     return base
 
 
-def _cand(id_, start, rois=(1, 2)):
-    return match.DbCandidate(id_, f"/{id_}.db", start, frozenset(rois) if rois else None)
+def _cand(id_, start, rois=(1, 2), **kw):
+    rois = frozenset(rois) if rois else None
+    return match.DbCandidate(id_, f"/{id_}.db", start, rois, **kw)
 
 
-TWO_RUNS = {
-    "ETHOSCOPE_007": [_cand(1, dt.datetime(2024, 1, 5, 9)), _cand(2, dt.datetime(2024, 1, 5, 10))]
-}
+def _machine(*files):
+    return {"ETHOSCOPE_007": match.group_runs(list(files))}
+
+
+TWO_RUNS = _machine(_cand(1, dt.datetime(2024, 1, 5, 9)), _cand(2, dt.datetime(2024, 1, 5, 10)))
 
 
 class TestMatchRow:
@@ -125,12 +129,12 @@ class TestMatchRow:
         ]
 
     def test_unreadable_candidate_is_roi_unknown(self):
-        by_machine = {"ETHOSCOPE_007": [_cand(1, dt.datetime(2024, 1, 5, 10), rois=None)]}
+        by_machine = _machine(_cand(1, dt.datetime(2024, 1, 5, 10), rois=None))
         [res] = match.match_row(_row(), by_machine)
         assert (res.db_file_id, res.status) == (1, "roi_unknown")
 
     def test_running_db_is_not_a_candidate(self):
-        by_machine = {"ETHOSCOPE_007": [_cand(1, dt.datetime(2024, 1, 3, 10))]}
+        by_machine = _machine(_cand(1, dt.datetime(2024, 1, 3, 10)))
         [res] = match.match_row(_row(), by_machine)
         assert res.status == "not_found" and res.db_file_id is None
 
@@ -142,5 +146,98 @@ class TestMatchRow:
         dbindex.scan_results(census, results_root)
         by_machine = match.load_candidates(census)
         assert sorted(by_machine) == ["ETHOSCOPE_007", "ETHOSCOPE_012", "ETHOSCOPE_020"]
-        assert [c.start.hour for c in by_machine["ETHOSCOPE_007"]] == [10, 9, 15]
-        assert by_machine["ETHOSCOPE_020"][0].roi_ids is None
+        assert [r.start.hour for r in by_machine["ETHOSCOPE_007"]] == [10, 9, 15]
+        assert by_machine["ETHOSCOPE_020"][0].files[0].roi_ids is None
+
+    def test_start_is_metadata_on_the_lab_clock(self, tmp_path, census):
+        from conftest import make_ethoscope_db
+
+        # Stamp says 2020-10-03 (a node bug), METADATA says 2022-09-27 08:30 UTC = 09:30 BST.
+        root = str(tmp_path / "r")
+        mid = "147" + "c" * 29
+        stamp = "2020-10-03_19-15-27"
+        path = os.path.join(root, mid, "ETHOSCOPE_147", stamp, f"{stamp}_{mid}.db")
+        make_ethoscope_db(path, machine_number=147, start=dt.datetime(2022, 9, 27, 8, 30))
+        dbindex.scan_results(census, root)
+        [run] = match.load_candidates(census)["ETHOSCOPE_147"]
+        assert run.start == dt.datetime(2022, 9, 27, 9, 30)
+        assert run.files[0].stamp == dt.datetime(2020, 10, 3, 19, 15, 27)
+        assert match.load_candidates(census, "UTC")["ETHOSCOPE_147"][0].start.hour == 8
+
+    def test_wrong_stamp_found_by_metadata_date(self):
+        by_machine = _machine(
+            _cand(1, dt.datetime(2022, 9, 27, 9, 30), stamp=dt.datetime(2020, 10, 3, 19, 15))
+        )
+        [res] = match.match_row(_row(date="2022-09-27"), by_machine)
+        assert (res.status, res.method) == ("unique", "start_date")
+
+    def test_path_date_is_a_flagged_fallback(self):
+        by_machine = _machine(
+            _cand(1, dt.datetime(2022, 9, 27, 9, 30), stamp=dt.datetime(2020, 10, 3, 19, 15))
+        )
+        [res] = match.match_row(_row(date="2020-10-03"), by_machine)
+        assert (res.status, res.method) == ("unique", "start_date+path_date")
+        assert "METADATA start 2022-09-27 09:30:00" in res.note
+
+    def test_time_may_be_the_path_stamp(self):
+        # A UTC stamp in summer is an hour behind the lab clock; users copy the stamp.
+        by_machine = _machine(
+            _cand(1, dt.datetime(2024, 6, 5, 9), stamp=dt.datetime(2024, 6, 5, 8)),
+            _cand(2, dt.datetime(2024, 6, 5, 15), stamp=dt.datetime(2024, 6, 5, 14)),
+        )
+        [res] = match.match_row(_row(date="2024-06-05", start_time="08:00:00"), by_machine)
+        assert (res.db_file_id, res.method) == (1, "start_time")
+
+
+class TestCopies:
+    START = dt.datetime(2024, 1, 5, 10)
+
+    def test_standard_name_is_used_and_copies_linked(self):
+        by_machine = _machine(_cand(1, self.START, standard=False), _cand(2, self.START))
+        results = match.match_row(_row(), by_machine)
+        assert [(r.db_file_id, r.status) for r in results] == [(2, "unique"), (1, "duplicate")]
+        assert "2 files of one run" in results[0].note
+
+    def test_largest_standard_copy_is_used(self):
+        # A partial copy of the same run (same start to the second) under another folder.
+        by_machine = _machine(_cand(1, self.START, size=10), _cand(2, self.START, size=99))
+        results = match.match_row(_row(), by_machine)
+        assert [(r.db_file_id, r.status) for r in results] == [(2, "unique"), (1, "duplicate")]
+        assert results[0].note == "2 files of one run: largest used"
+
+    def test_no_readable_standard_copy_is_ambiguous(self):
+        by_machine = _machine(_cand(1, self.START, standard=False), _cand(2, self.START, rois=None))
+        results = match.match_row(_row(), by_machine)
+        assert [(r.db_file_id, r.status) for r in results] == [(1, "ambiguous"), (2, "ambiguous")]
+
+    def test_empty_file_is_never_last_of_day(self):
+        by_machine = _machine(
+            _cand(1, dt.datetime(2024, 1, 5, 10)),
+            _cand(2, dt.datetime(2024, 1, 5, 18), rois=None, size=0),
+        )
+        results = match.match_row(_row(), by_machine)
+        assert [(r.db_file_id, r.status) for r in results] == [(1, "unique"), (2, "superseded")]
+
+
+class TestDateOrder:
+    def test_month_first_reading_finding_a_run_is_ambiguous(self):
+        by_machine = _machine(
+            _cand(1, dt.datetime(2024, 1, 5, 10)), _cand(2, dt.datetime(2024, 5, 1, 10))
+        )
+        row = _row(date="2024-01-05", date_alt="2024-05-01", date_status="ambiguous")
+        results = match.match_row(row, by_machine)
+        assert [(r.db_file_id, r.status) for r in results] == [
+            (1, "date_ambiguous"),
+            (2, "date_ambiguous"),
+        ]
+        assert results[0].note == "day/month order unknown: 2024-01-05 or 2024-05-01"
+
+    def test_only_one_reading_finds_a_run(self):
+        by_machine = _machine(_cand(1, dt.datetime(2024, 1, 5, 10)))
+        row = _row(date="2024-01-05", date_alt="2024-05-01", date_status="ambiguous")
+        [res] = match.match_row(row, by_machine)
+        assert (res.db_file_id, res.status) == (1, "unique")
+        # Only the month-first reading finds a run: still flagged, never silent.
+        row = _row(date="2024-05-01", date_alt="2024-01-05", date_status="ambiguous")
+        [res] = match.match_row(row, by_machine)
+        assert (res.db_file_id, res.status) == (1, "date_ambiguous")

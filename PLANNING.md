@@ -28,23 +28,30 @@ Results tree path pattern: <machine_id>/<machine_name>/<YYYY-MM-DD_HH-MM-SS>/<YY
 Useful METADATA keys inside each .db: machine_id, machine_name, date_time (unix start), version, hardware_info (python-literal dict: kernel, camera — sometimes a plain string —, pi_version), selected_options (python-literal-ish string: tracker class, interactor class/kwargs), gain_setting, maxfps_setting, tracker_class, stop_date_time (may be absent). ROI tables: ROI_MAP(roi_idx, x, y, w, h), ROI_n(t ms, x, y, ..., is_inferred stored as tinyint OR text '0'/'1').
 
 ### SQLite schema (first cut)
-- db_file(id, path, machine_id, machine_name, start_utc, size, mtime, sw_version, kernel, camera_sensor, tracker, gain, maxfps, n_rois, duration_h, interactor, readable, error)
+- db_file(id, path, machine_id, machine_name, start_utc, size, mtime, sw_version, kernel, camera_sensor, tracker, gain, maxfps, n_rois, duration_h, interactor, readable, error); schema 3 adds experimenter and location (METADATA `experimental_info`: who ran it, which incubator)
 - meta_file(id, path, home, sheet, sha256, mtime, n_rows, columns_raw, score, status)
 - meta_row(id, meta_file_id, row_idx, raw_json, date, machine_name, region_id, sex, genotype_raw, treatment_raw, other_json)
 - match(meta_row_id, db_file_id, status, method, note) — many-to-many
 - vocab(kind, raw, normalised, curated_by) — phase 3
 
 ### What counts as metadata
-What ethoscopy accepts (`link_meta_index`): the first row has the columns `machine_name`, `date` and `region_id`, spelled exactly, plus an optional `time`. No column aliasing, no title rows. Descriptive columns `genotype`, `sex`, `treatment` are picked up case-insensitively; every other column is kept verbatim.
+Files read: csv, tsv, txt (rethomics-era metadata was often written with R's `write.table`; Giorgio, 2026-10-04) and every sheet of xlsx/xlsm/xls. What ethoscopy accepts (`link_meta_index`): the first row has the columns `machine_name`, `date` and `region_id`, spelled exactly, plus an optional `time`. No column aliasing, no title rows (on real data, aliasing would add 53 of ~4,150 sheets). Descriptive columns `genotype`, `sex`, `treatment` are picked up case-insensitively; every other column is kept verbatim.
+
+rethomics (scopr) exports are accepted too (Giorgio, 2026-10-04): `machine_name`, `datetime`, `region_id` with no `date`; `datetime` gives the day and the run's start time. `ingest --reparse` re-checks rejected sheets' stored headers when the rules change.
+
+Dates (Giorgio, 2026-10-04): the unambiguous way to record a date is three columns `day`, `month`, `year`, which survive spreadsheets that rewrite a date cell in the computer's locale. When all three are present they stand in for `date` (and win over it; disagreements are noted). ethoscopy and rethomics are to accept them and to warn when only `date` is given.
 
 ### Matching rules
-1. Normalise machine_name (ETHOSCOPE_007 = ETHOSCOPE_7 = 007 = 7) and date. Accept ISO, Excel serial, datetime cells. Day/month strings are always dd/mm/yyyy (lab rule, enforced): `05/01/2024` is 5 January, `01/25/2024` is invalid.
-2. The metadata date is always the date the experiment started: candidates are dbs on that machine whose results-tree stamp has that date. A db merely still running on that date is not a candidate.
-3. Several dbs starting the same day (false starts, early crashes): the experiment is the last of the day (`last_of_day`); the earlier ones are recorded as `superseded`.
-4. A `time` column picks the run instead: exact stamp match (`start_time`); failing that, the run within a tolerance (`start_time_approx`, flagged); several runs within tolerance: `ambiguous`, all listed.
-5. region_id must exist in that db's ROI_MAP, otherwise `roi_missing`.
+1. Normalise machine_name (ETHOSCOPE_007 = ETHOSCOPE_7 = 007 = 7) and the date. A single `date` column: ISO strings, Excel serials and datetime cells are unambiguous. Day/month strings (`05/01/2024`) are read in the order the sheet's own unambiguous strings show (a part above 12 can only be a day); a sheet with no or mixed evidence reads them day-first (lab convention) and keeps each ambiguous one's month-first reading too (`date_status` `ambiguous`, `date_alt`). On real data, 25 sheets are month-first and 89 have no evidence.
+2. The metadata date is the date the experiment started. A run's start is the `date_time` in its METADATA, on the lab's clock (`Europe/London`, `match --timezone`); the results-tree stamp is used only when METADATA cannot be read. Stamps are unreliable: 269 differ from METADATA by date, and users' metadata follows METADATA (127 dbs) far more than the stamp (12). When no run starts that day by METADATA, a run whose stamp has that date is accepted and flagged (method `...+path_date`). A db merely still running on that date is not a candidate.
+3. Files of one machine with the same METADATA start (to the second) are copies of one run: 863 groups on turing, mostly the same run under two folders whose stamps differ by 1 h (local vs UTC) or by minutes, plus `_backup_` and `_NN_` files; 731 groups hold copies of different sizes (partial syncs). The readable file with the standard name is used, the largest (most complete) if there are several, and the others are linked as `duplicate`; with no readable standard file, all are `ambiguous`. This is not v1's "keep the largest": it only ever chooses among copies of one recording, never among different runs of a day.
+4. Several runs starting the same day (false starts, early crashes): the experiment is the last of the day (`last_of_day`), never an empty (0-byte) file while a real one exists; the earlier ones are recorded as `superseded`.
+5. A `time` column picks the run instead: exact match on the local start or the path stamp (`start_time`); failing that, the run within a tolerance (`start_time_approx`, flagged); several runs within tolerance: `ambiguous`, all listed.
+6. An ambiguous date whose month-first reading finds a run is `date_ambiguous`, with every candidate of both readings listed.
+7. region_id must exist in that db's ROI_MAP, otherwise `roi_missing`.
 
 ### Census outputs
+Database categories: single / multiple (claimed), tentative, duplicate, superseded, empty (0 bytes), misfire (unclaimed and <= 5 MB, or a known length < 24 h: failed starts and crashes; Giorgio, 2026-10-04) and orphan.
 - dbs claimed by one source, by several (do they agree on genotype?), superseded same-day runs, or by none (orphans);
 - rows not found or ambiguous;
 - summaries by year, home, machine, stack (legacy vs picamera2 from the kernel: '+rpt' or '-v8' = picamera2), tracker;

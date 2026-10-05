@@ -54,3 +54,28 @@ def test_wrong_schema_version_refused(tmp_path):
     conn.close()
     with pytest.raises(store.SchemaVersionError):
         store.connect(path)
+
+
+def test_schema_1_is_migrated_in_place(tmp_path):
+    path = tmp_path / "old.sqlite"
+    raw = sqlite3.connect(path)
+    raw.executescript("""
+        CREATE TABLE schema_info (key TEXT PRIMARY KEY, value TEXT);
+        INSERT INTO schema_info VALUES ('version', '1');
+        CREATE TABLE meta_file (id INTEGER PRIMARY KEY, path TEXT NOT NULL,
+                                sheet TEXT NOT NULL DEFAULT '', status TEXT NOT NULL);
+        CREATE TABLE meta_row (id INTEGER PRIMARY KEY, meta_file_id INTEGER NOT NULL,
+                               row_idx INTEGER NOT NULL, raw_json TEXT NOT NULL);
+        CREATE TABLE db_file (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE, machine_name TEXT,
+                              readable INTEGER NOT NULL DEFAULT 0);
+        INSERT INTO meta_file VALUES (1, '/m.csv', '', 'ingested');
+        """)
+    raw.close()
+    conn = store.connect(path)
+    assert "date_alt" in {r[1] for r in conn.execute("PRAGMA table_info(meta_row)")}
+    assert "experimenter" in {r[1] for r in conn.execute("PRAGMA table_info(db_file)")}
+    row = conn.execute("SELECT status, date_order FROM meta_file").fetchone()
+    assert row["status"] == "ingested" and row["date_order"] is None
+    assert conn.execute("SELECT value FROM schema_info").fetchone()[0] == store.SCHEMA_VERSION
+    conn.close()
+    store.connect(path).close()  # already current: nothing to migrate

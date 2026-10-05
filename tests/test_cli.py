@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 
@@ -5,7 +6,7 @@ import pandas as pd
 import pytest
 
 from conftest import write_text
-from ethoscope_metadata_db.census import cli, ingest
+from ethoscope_metadata_db.census import cli, dbindex, ingest
 
 
 def run(census_path, *args):
@@ -25,7 +26,7 @@ def test_full_pipeline(results_root, homes_root, tmp_path, capsys):
 
     out_dir = tmp_path / "report"
     assert run(census, "report", "--out-dir", str(out_dir)) == 0
-    assert "orphan" in capsys.readouterr().out
+    assert "misfire" in capsys.readouterr().out
     assert (out_dir / "db_claims.csv").exists()
 
     out = tmp_path / "cs.csv"
@@ -73,6 +74,46 @@ def test_ingest_named_file(tmp_path, capsys):
     path = write_text(str(tmp_path / "m.csv"), "date,machine_name,region_id\n2024-01-05,7,1\n")
     assert run(tmp_path / "c.sqlite", "ingest", path, "--home", "manual") == 0
     assert "rows=1" in capsys.readouterr().out
+
+
+def test_files_from_and_exclude(results_root, homes_root, tmp_path, capsys):
+    census = tmp_path / "c.sqlite"
+    listing = write_text(
+        str(tmp_path / "list.txt"),
+        "# runs missing elsewhere\n\n"
+        + "\n".join(
+            os.path.relpath(p, results_root) for p in list(dbindex.iter_db_files(results_root))[:2]
+        ),
+    )
+    assert run(census, "scan-dbs", results_root, "--files-from", listing) == 0
+    assert "seen=2" in capsys.readouterr().out
+    assert run(census, "discover", homes_root, "--exclude", "bob", "--exclude", "carol") == 0
+    assert "seen=4" in capsys.readouterr().out
+    homes = write_text(str(tmp_path / "homes.txt"), "bob/flies.xlsx\n")
+    assert run(census, "discover", homes_root, "--files-from", homes) == 0
+    assert "seen=1" in capsys.readouterr().out
+
+
+def test_files_from_with_non_utf8_names(homes_root, tmp_path, capsys):
+    folder = os.path.join(homes_root, "carol").encode()
+    with open(os.path.join(folder, b"donn\xe9es.csv"), "w") as handle:
+        handle.write("date,machine_name,region_id\n2024-01-05,7,1\n")
+    listing = tmp_path / "list.txt"
+    listing.write_bytes(b"carol/donn\xe9es.csv\ncarol/timed.tsv\n")
+    assert run(tmp_path / "c.sqlite", "discover", homes_root, "--files-from", str(listing)) == 0
+    out = capsys.readouterr().out
+    assert "seen=2" in out and "registered=1" in out and "bad_name=1" in out
+
+
+def test_txt_read_by_default(homes_root, tmp_path, capsys):
+    write_text(
+        os.path.join(homes_root, "carol", "rethomics.txt"),
+        "machine_name\tdate\tregion_id\nETHOSCOPE_007\t2024-01-05\t1\n",
+    )
+    assert run(tmp_path / "a.sqlite", "discover", homes_root) == 0
+    assert "seen=7" in capsys.readouterr().out
+    assert run(tmp_path / "b.sqlite", "discover", homes_root, "--no-txt") == 0
+    assert "seen=6" in capsys.readouterr().out
 
 
 def test_census_argument_required():

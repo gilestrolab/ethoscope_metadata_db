@@ -29,17 +29,34 @@ def _print_counts(title: str, counts: dict[str, int]) -> None:
     print(title + ": " + ", ".join(f"{k}={v}" for k, v in counts.items()))
 
 
+def _read_list(path: str | None) -> list[str] | None:
+    """Paths listed one per line (blank lines and ``#`` comments ignored).
+
+    Bytes that are not UTF-8 (old file names) are kept as the file system
+    gives them, so such files are found and then reported as ``bad_name``.
+    """
+    if path is None:
+        return None
+    with open(path, encoding="utf-8", errors="surrogateescape") as handle:
+        lines = (line.strip() for line in handle)
+        return [line for line in lines if line and not line.startswith("#")]
+
+
 def cmd_scan_dbs(conn, args: argparse.Namespace) -> int:
-    _print_counts("scan-dbs", scan_results(conn, args.results_root, rescan=args.rescan))
+    paths = _read_list(args.files_from)
+    counts = scan_results(conn, args.results_root, rescan=args.rescan, paths=paths)
+    _print_counts("scan-dbs", counts)
     return 0
 
 
 def cmd_discover(conn, args: argparse.Namespace) -> int:
     extensions = set(discover_mod.DEFAULT_EXTENSIONS)
-    if args.include_txt:
-        extensions.add(".txt")
+    if args.no_txt:
+        extensions.discard(".txt")
     max_mb = None if args.max_mb <= 0 else args.max_mb
-    counts = discover_mod.discover(conn, args.homes_root, extensions, max_mb)
+    counts = discover_mod.discover(
+        conn, args.homes_root, extensions, max_mb, args.exclude, _read_list(args.files_from)
+    )
     _print_counts("discover", counts)
     candidates = conn.execute(
         "SELECT count(*) FROM meta_file WHERE status = 'candidate'"
@@ -52,13 +69,13 @@ def cmd_ingest(conn, args: argparse.Namespace) -> int:
     if args.files:
         counts = discover_mod.ingest_files(conn, args.files, home=args.home, force=args.force)
     else:
-        counts = discover_mod.ingest_candidates(conn)
+        counts = discover_mod.ingest_candidates(conn, reparse=args.reparse)
     _print_counts("ingest", counts)
     return 0
 
 
 def cmd_match(conn, args: argparse.Namespace) -> int:
-    _print_counts("match", match_mod.match_all(conn, args.time_tolerance))
+    _print_counts("match", match_mod.match_all(conn, args.time_tolerance, args.timezone))
     return 0
 
 
@@ -99,6 +116,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("scan-dbs", help="index the ethoscope results tree")
     p.add_argument("results_root")
     p.add_argument("--rescan", action="store_true", help="re-read unchanged databases")
+    p.add_argument(
+        "--files-from", help="index only the databases listed in this file (relative to the root)"
+    )
     p.set_defaults(func=cmd_scan_dbs)
 
     p = sub.add_parser("discover", help="find metadata files under a homes root")
@@ -109,13 +129,26 @@ def build_parser() -> argparse.ArgumentParser:
         default=discover_mod.DEFAULT_MAX_MB,
         help="skip larger files (0: no limit)",
     )
-    p.add_argument("--include-txt", action="store_true", help="also consider .txt files")
+    p.add_argument("--no-txt", action="store_true", help="skip .txt files")
+    p.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="DIRNAME",
+        help="skip directories with this name (repeatable)",
+    )
+    p.add_argument(
+        "--files-from", help="register only the files listed in this file (relative to the root)"
+    )
     p.set_defaults(func=cmd_discover)
 
     p = sub.add_parser("ingest", help="parse discovered (or named) metadata files")
     p.add_argument("files", nargs="*", help="ingest these files regardless of score")
     p.add_argument("--home", help="provenance label for named files")
     p.add_argument("--force", action="store_true", help="re-read even if unchanged")
+    p.add_argument(
+        "--reparse", action="store_true", help="re-parse sheets already ingested (new rules)"
+    )
     p.set_defaults(func=cmd_ingest)
 
     p = sub.add_parser("match", help="match metadata rows to databases")
@@ -124,6 +157,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=match_mod.DEFAULT_TIME_TOLERANCE_MIN,
         help="start-time tolerance in minutes",
+    )
+    p.add_argument(
+        "--timezone",
+        default=match_mod.DEFAULT_TIMEZONE,
+        help="the lab's time zone, in which metadata dates and times are written",
     )
     p.set_defaults(func=cmd_match)
 

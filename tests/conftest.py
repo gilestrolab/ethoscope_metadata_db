@@ -45,6 +45,7 @@ def make_ethoscope_db(
     hardware_info: Any = PICAM2_HW,
     selected_options: str = PLAIN_OPTIONS,
     is_inferred_text: bool = False,
+    experimental_info: Any = None,
 ) -> str:
     """Write a small ethoscope-like SQLite database.
 
@@ -59,6 +60,8 @@ def make_ethoscope_db(
         hardware_info: Dict (stored as its repr) or plain string.
         selected_options: Stored verbatim.
         is_inferred_text: Store ``is_inferred`` as text '0'/'1' (a firmware quirk).
+        experimental_info: Dict stored as its repr in METADATA (default: user
+            ``alice`` in ``Incubator_1``).
 
     Returns:
         ``path``.
@@ -74,6 +77,11 @@ def make_ethoscope_db(
         "selected_options": selected_options,
         "gain_setting": "1.5",
         "maxfps_setting": "15",
+        "experimental_info": repr(
+            experimental_info
+            if experimental_info is not None
+            else {"name": "alice", "location": "Incubator_1", "code": ""}
+        ),
     }
     if stop_after_h is not None:
         meta["stop_date_time"] = str(epoch + int(stop_after_h * 3600))
@@ -116,7 +124,7 @@ def results_root(tmp_path) -> str:
 
     ETHOSCOPE_007: 2024-01-05 10:00 (3-day run, stimulator, picamera2),
                    2024-01-10 09:00 and 2024-01-10 15:00 (two same-day runs).
-    ETHOSCOPE_012: 2024-03-25 10:00 (10 ROIs, legacy, duration from ROI rows),
+    ETHOSCOPE_012: 2024-03-25 10:00 (10 ROIs, legacy, no stop_date_time),
                    2024-04-01 10:00 with a non-empty -wal sidecar.
     ETHOSCOPE_020: a corrupt file.
     """

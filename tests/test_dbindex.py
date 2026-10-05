@@ -47,13 +47,30 @@ class TestReadMetadata:
         assert row["duration_h"] == 72
         assert row["n_rois"] == 20 and json.loads(row["roi_ids"]) == list(range(1, 21))
         assert row["gain"] == "1.5" and row["maxfps"] == "15"
+        assert row["experimenter"] == "alice" and row["location"] == "Incubator_1"
 
-    def test_legacy_db_duration_from_roi_rows(self, results_root, census):
+    def test_legacy_db_without_stop_has_no_duration(self, results_root, census):
         dbindex.scan_results(census, results_root)
         row = _by_name(census)[("ETHOSCOPE_012", "2024-03-25T10:00:00")]
         assert row["stack"] == "legacy" and row["camera_sensor"] == "imx219"
-        assert row["duration_h"] == 48 and row["n_rois"] == 10
+        assert row["duration_h"] is None and row["n_rois"] == 10
         assert row["interactor"] == "DefaultInteractor"
+
+    def test_tracking_tables_are_never_read(self, results_root):
+        path = next(p for p in dbindex.iter_db_files(results_root) if "ETHOSCOPE_012" in p)
+        conn = dbindex.open_readonly(path)
+        read_tables = set()
+
+        def record(action, table, *_):
+            if action == sqlite3.SQLITE_READ:
+                read_tables.add(table)
+            return sqlite3.SQLITE_OK
+
+        conn.set_authorizer(record)
+        dbindex.read_db_metadata(conn)
+        conn.close()
+        assert "METADATA" in read_tables and "ROI_MAP" in read_tables
+        assert not [t for t in read_tables if t.startswith("ROI_") and t != "ROI_MAP"]
 
     def test_hardware_info_plain_string(self, tmp_path, census):
         root = str(tmp_path / "r")
@@ -69,6 +86,47 @@ class TestReadMetadata:
         row = census.execute("SELECT * FROM db_file").fetchone()
         assert row["readable"] == 1
         assert row["kernel"] is None and row["stack"] is None and row["tracker"] is None
+
+    def test_structured_pi_version_stored_as_json(self, tmp_path, census):
+        root = str(tmp_path / "r")
+        start = dt.datetime(2025, 9, 24, 18)
+        hardware = {**LEGACY_HW, "pi_version": {"model_number": 3, "model_type": "Model B Rev"}}
+        make_ethoscope_db(
+            tree_db_path(root, 11, start), machine_number=11, start=start, hardware_info=hardware
+        )
+        assert dbindex.scan_results(census, root)["unreadable"] == 0
+        row = census.execute("SELECT pi_version, kernel FROM db_file").fetchone()
+        assert json.loads(row["pi_version"]) == {"model_number": 3, "model_type": "Model B Rev"}
+        assert row["kernel"] == LEGACY_HW["kernel"]
+
+    def test_blank_experimental_info(self, tmp_path, census):
+        root = str(tmp_path / "r")
+        start = dt.datetime(2017, 6, 1, 9)
+        make_ethoscope_db(
+            tree_db_path(root, 3, start),
+            machine_number=3,
+            start=start,
+            experimental_info={"name": " ", "location": "", "code": ""},
+        )
+        dbindex.scan_results(census, root)
+        row = census.execute("SELECT experimenter, location FROM db_file").fetchone()
+        assert row["experimenter"] is None and row["location"] is None
+
+    def test_new_firmware_options(self, tmp_path, census):
+        root = str(tmp_path / "r")
+        start = dt.datetime(2026, 9, 1, 9)
+        make_ethoscope_db(
+            tree_db_path(root, 354, start),
+            machine_number=354,
+            start=start,
+            selected_options=NEW_FIRMWARE_OPTIONS,
+        )
+        dbindex.scan_results(census, root)
+        row = census.execute(
+            "SELECT tracker, interactor, interactor_kwargs FROM db_file"
+        ).fetchone()
+        assert row["interactor"] == "ComposedStimulator" and row["tracker"] == "AdaptiveBGModel"
+        assert json.loads(row["interactor_kwargs"]) == {"trigger_type": "inactivity"}
 
     def test_camera_as_plain_string_in_dict(self, tmp_path, census):
         root = str(tmp_path / "r")
@@ -111,6 +169,27 @@ class TestUnreadable:
         conn.close()
 
 
+class TestFileSelection:
+    def test_hidden_files_skipped(self, results_root, census):
+        real = next(dbindex.iter_db_files(results_root))
+        folder, name = os.path.split(real)
+        with open(os.path.join(folder, "." + name), "wb") as handle:  # rsync temporary
+            handle.write(b"partial")
+        assert dbindex.scan_results(census, results_root)["seen"] == 6
+
+    def test_listed_paths_only(self, results_root, census, caplog):
+        every = list(dbindex.iter_db_files(results_root))
+        listed = [os.path.relpath(every[0], results_root), every[1], "missing/x.db", "notes.txt"]
+        counts = dbindex.scan_results(census, results_root, paths=listed)
+        assert counts["seen"] == 2
+        paths = {r[0] for r in census.execute("SELECT path FROM db_file")}
+        assert paths == {every[0], every[1]}
+        assert "listed database not found" in caplog.text
+
+    def test_empty_list_scans_nothing(self, results_root, census):
+        assert dbindex.scan_results(census, results_root, paths=[])["seen"] == 0
+
+
 class TestRescan:
     def test_unchanged_files_skipped(self, results_root, census):
         dbindex.scan_results(census, results_root)
@@ -138,3 +217,43 @@ class TestRescan:
         assert not any(
             f.endswith(("-shm", "-journal")) for _, _, fs in os.walk(results_root) for f in fs
         )
+
+
+NEW_FIRMWARE_OPTIONS = (
+    "OrderedDict({'interactor': {'possible_classes': ["
+    "<class 'ethoscope.stimulators.stimulators.DefaultStimulator'>, "
+    "<class 'ethoscope.stimulators.composed_stimulator.ComposedStimulator'>], "
+    "'class': <class 'ethoscope.stimulators.composed_stimulator.ComposedStimulator'>, "
+    "'kwargs': {'trigger_type': 'inactivity'}}, "
+    "'tracker': {'class': <class 'ethoscope.trackers.adaptive_bg_tracker.AdaptiveBGModel'>, "
+    "'kwargs': {}}})"
+)
+
+
+class TestParseOptions:
+    def test_ordered_dict_with_class_reprs(self):
+        options = dbindex.parse_options(NEW_FIRMWARE_OPTIONS)
+        assert dbindex._option_name(options, "interactor") == (
+            "ComposedStimulator",
+            {"trigger_type": "inactivity"},
+        )
+
+    def test_ordered_dict_of_pairs(self):
+        text = (
+            "OrderedDict([('interactor', {'possible_classes': "
+            "[<class 'ethoscope.stimulators.composed_stimulator.ComposedStimulator'>], "
+            "'class': <class 'ethoscope.stimulators.stimulators.DefaultStimulator'>, "
+            "'kwargs': {}})])"
+        )
+        options = dbindex.parse_options(text)
+        assert dbindex._option_name(options, "interactor") == ("DefaultStimulator", {})
+
+    def test_old_firmware_and_unreadable(self):
+        from conftest import STIM_OPTIONS
+
+        assert dbindex._option_name(dbindex.parse_options(STIM_OPTIONS), "interactor")[0] == (
+            "DefaultStimulator"
+        )
+        assert dbindex.parse_options("garbage{") is None
+        assert dbindex.parse_options(None) is None
+        assert dbindex.parse_options("[1, 2]") is None
