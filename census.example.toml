@@ -1,0 +1,20 @@
+# Example census configuration: `ethocensus --census census.sqlite refresh --config census.toml`
+timezone = "Europe/London"
+
+[[results]]
+path = "/mnt/ethoscope_results"
+
+# A second copy of the tree: index only the runs the first one lacks.
+# [[results]]
+# path = "/mnt/backup/ethoscope_results"
+# files_from = "backup_only_dbs.txt"     # relative paths, one per line
+
+[[metadata]]
+path = "/home"
+tag = "homes"
+exclude = ["secrets", "cache"]
+
+[[metadata]]
+path = "/srv/alumni"
+tag = "alumni"
+# txt = false                           # skip .txt files here

@@ -191,6 +191,8 @@ def connect(path: str | os.PathLike[str]) -> sqlite3.Connection:
     conn = sqlite3.connect(os.fspath(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # Reason: WAL lets the web UI read while a refresh writes.
+    conn.execute("PRAGMA journal_mode = WAL")
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_info'"
     ).fetchone()

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% from "_macros.html" import category %}
+{% block content %}
+{% set c = data.categories %}
+<div class="tiles">
+  <a class="tile hero" href="/runs"><div class="label">Databases</div><div class="value">{{ data.total|int }}</div></a>
+  <a class="tile" href="/runs?category=single&category=multiple"><div class="label"><span class="swatch s-claimed"></span>Claimed by metadata</div><div class="value">{{ data.claimed|int }}</div></a>
+  <a class="tile" href="/runs?category=orphan"><div class="label"><span class="swatch s-orphan"></span>Orphans</div><div class="value">{{ c.get('orphan', 0)|int }}</div></a>
+  <a class="tile" href="/runs?category=misfire&category=empty"><div class="label"><span class="swatch s-failed"></span>Misfires or empty</div><div class="value">{{ (c.get('misfire', 0) + c.get('empty', 0))|int }}</div></a>
+  <a class="tile" href="/runs?category=superseded&category=duplicate"><div class="label"><span class="swatch s-copies"></span>Earlier runs or copies</div><div class="value">{{ (c.get('superseded', 0) + c.get('duplicate', 0))|int }}</div></a>
+  <a class="tile" href="/files"><div class="label">Metadata files</div><div class="value">{{ data.rows.get('files', 0)|int }}</div></a>
+</div>
+
+<section class="card">
+  <h2 style="margin-top:0">Databases per month, by whether metadata claims them</h2>
+  <div class="scroll chart-wrap">{{ chart }}</div>
+  {{ legend() }}
+  <p class="muted">Month of the run's start on the lab clock. Click a month to list its runs.
+  {% if left_out %}{{ left_out|int }} run(s) dated before 2010 (node clock never set) are left out of the chart.{% endif %}
+  {% if data.summarised_at %}Census summarised {{ data.summarised_at }} (UTC).{% endif %}</p>
+  <div class="scroll">
+    <h2>By year</h2>
+    <table>
+      <thead><tr><th>Year</th>{% for key, cats, label in SERIES_LIST %}<th class="num"><span class="pill"><span class="swatch s-{{ key }}"></span>{{ label }}</span></th>{% endfor %}<th class="num">Total</th></tr></thead>
+      <tbody>
+      {% for row in data.yearly %}{% set f = fold(row.counts) %}
+        <tr><td><a href="/runs?year={{ row.key }}">{{ row.key }}</a></td>
+          {% for key, cats, label in SERIES_LIST %}<td class="num">{% if f[key] %}<a href="/runs?year={{ row.key }}{% for cat in cats %}&category={{ cat }}{% endfor %}">{{ f[key]|int }}</a>{% else %}<span class="muted">–</span>{% endif %}</td>{% endfor %}
+          <td class="num">{{ row.total|int }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="grid2" style="margin-top:1rem">
+
+  <section class="card scroll">
+    <h2 style="margin-top:0">Who ran the unclaimed runs</h2>
+    <p class="muted" style="margin-top:0">Experimenter as typed on the node.</p>
+    <table>
+      <thead><tr><th>Experimenter</th><th class="num">Orphans</th><th class="num">Misfires</th><th class="num">Claimed</th><th class="num">All</th></tr></thead>
+      <tbody>
+      {% for p in data.people %}{% set who = NONE if p.who == '(none)' else p.who %}
+        <tr><td><a href="/runs?experimenter={{ who|urlencode }}">{{ p.who }}</a></td>
+          <td class="num"><a href="/runs?experimenter={{ who|urlencode }}&category=orphan">{{ p.orphan|int }}</a></td>
+          <td class="num"><a href="/runs?experimenter={{ who|urlencode }}&category=misfire">{{ p.misfire|int }}</a></td>
+          <td class="num">{{ p.claimed|int }}</td><td class="num">{{ p.total|int }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card scroll">
+    <h2 style="margin-top:0">By camera stack</h2>
+    <table>
+      <thead><tr><th>Stack</th>{% for key, cats, label in SERIES_LIST %}<th class="num">{{ label }}</th>{% endfor %}<th class="num">Total</th></tr></thead>
+      <tbody>
+      {% for row in data.stacks %}{% set f = fold(row.counts) %}{% set stack = NONE if row.key == 'no kernel' else row.key %}
+        <tr><td><a href="/runs?stack={{ stack|urlencode }}">{{ row.key }}</a></td>
+          {% for key, cats, label in SERIES_LIST %}<td class="num">{{ f[key]|int }}</td>{% endfor %}
+          <td class="num">{{ row.total|int }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card scroll">
+    <h2 style="margin-top:0">Metadata</h2>
+    {% set r = data.rows %}
+    <p>{{ r.get('files', 0)|int }} metadata sheets; rows matched to exactly one run: <strong>{{ r.get('unique', 0)|int }}</strong>,
+      not found: {{ r.get('not_found', 0)|int }}, ROI missing: {{ r.get('roi_missing', 0)|int }},
+      ambiguous date: {{ r.get('date_ambiguous', 0)|int }}, incomplete: {{ r.get('incomplete', 0)|int }}.</p>
+    <table>
+      <thead><tr><th>Location</th><th class="num">Files</th><th class="num">Rows</th></tr></thead>
+      <tbody>
+      {% for t in data.tags %}
+        <tr><td><a href="/files?tag={{ t.tag|urlencode }}">{{ t.tag }}</a></td><td class="num">{{ t.files|int }}</td><td class="num">{{ t.rows|int }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endblock %}

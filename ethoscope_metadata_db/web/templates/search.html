@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Search · Ethoscope census{% endblock %}
+{% block content %}
+<h1>Search{% if q %}: “{{ q }}”{% endif %}</h1>
+{% if not q %}<p class="muted">Type a machine (e.g. 102 or ETHOSCOPE_102), a date (2024-01 or 2024-01-05), a person, part of a file path, or a genotype.</p>{% endif %}
+{% set r = results %}
+<div class="grid2">
+  {% if r.machine %}<section class="card"><h2 style="margin-top:0">Machine</h2><a href="/runs?machine={{ r.machine.name }}">{{ r.machine.name }}</a> · {{ r.machine.n|int }} runs</section>{% endif %}
+  {% if r.date %}<section class="card"><h2 style="margin-top:0">Date</h2>{% set key = 'month' if r.date.value|length == 7 else 'year' if r.date.value|length == 4 else '' %}
+    {% if key %}<a href="/runs?{{ key }}={{ r.date.value }}">{{ r.date.n|int }} runs started in {{ r.date.value }}</a>{% else %}<a href="/runs?day={{ r.date.value }}">{{ r.date.n|int }} runs started on {{ r.date.value }}</a>{% endif %}</section>{% endif %}
+  {% if r.experimenters %}<section class="card"><h2 style="margin-top:0">Experimenters (on the node)</h2><ul>{% for e in r.experimenters %}<li><a href="/runs?experimenter={{ e.value|urlencode }}">{{ e.value }}</a> <span class="muted">{{ e.n|int }} runs</span></li>{% endfor %}</ul></section>{% endif %}
+  {% if r.homes %}<section class="card"><h2 style="margin-top:0">Homes</h2><ul>{% for h in r.homes %}<li><a href="/files?home={{ h.value|urlencode }}">{{ h.value }}</a> <span class="muted">{{ h.n|int }} metadata files</span></li>{% endfor %}</ul></section>{% endif %}
+  {% if r.genotypes %}<section class="card"><h2 style="margin-top:0">Genotypes</h2><ul>{% for g in r.genotypes %}<li>{{ g.value }} <span class="muted">{{ g.n|int }} rows in {{ g.n_files|int }} files</span></li>{% endfor %}</ul></section>{% endif %}
+  {% if r.files %}<section class="card scroll"><h2 style="margin-top:0">Metadata files</h2><ul>{% for f in r.files %}<li><a class="path" href="/files/{{ f.id }}">{{ f.path }}{% if f.sheet %} [{{ f.sheet }}]{% endif %}</a> <span class="muted">{{ f.outcome }}, {{ f.n_rows|int }} rows</span></li>{% endfor %}</ul></section>{% endif %}
+  {% if r.runs %}<section class="card scroll"><h2 style="margin-top:0">Runs by path</h2><ul>{% for x in r.runs %}<li><a href="/runs/{{ x.id }}">{{ x.machine_name }} {{ (x.start_local or '')|replace('T', ' ') }}</a> <span class="muted">{{ x.category }}</span></li>{% endfor %}</ul></section>{% endif %}
+</div>
+{% if q and not (r.machine or r.date or r.experimenters or r.homes or r.genotypes or r.files or r.runs) %}<p class="muted">Nothing found.</p>{% endif %}
+{% endblock %}

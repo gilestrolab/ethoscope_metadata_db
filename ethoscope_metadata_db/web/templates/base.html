@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Ethoscope census{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">Ethoscope census</a>
+  <nav>
+    {% set here = request.url.path %}
+    <a href="/" class="{{ 'on' if here == '/' }}">Overview</a>
+    <a href="/runs" class="{{ 'on' if here.startswith('/runs') }}">Runs</a>
+    <a href="/files" class="{{ 'on' if here.startswith('/files') }}">Metadata files</a>
+  </nav>
+  <form action="/search" method="get" role="search">
+    <input type="search" name="q" value="{{ q or '' }}" placeholder="Machine, date, person, file, genotype…" aria-label="Search">
+  </form>
+  {% if user %}<span class="user">{{ user }}</span>{% endif %}
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

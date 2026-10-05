@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% from "_macros.html" import category %}
+{% block title %}{{ file.path.rsplit('/', 1)[-1] }} · Ethoscope census{% endblock %}
+{% block content %}
+<p><a href="/files?home={{ (file.home or NONE)|urlencode }}">← metadata files of {{ file.home or 'this location' }}</a></p>
+<h1 class="path">{{ file.path.rsplit('/', 1)[-1] }}{% if file.sheet %} [{{ file.sheet }}]{% endif %}</h1>
+
+<div class="grid2">
+  <section class="card">
+    <h2 style="margin-top:0">File</h2>
+    <dl class="facts">
+      <dt>Path</dt><dd class="path mono">{{ file.path }}</dd>
+      <dt>Home · location</dt><dd>{{ file.home or '–' }} · {{ file.tag or '–' }}</dd>
+      <dt>Modified</dt><dd>{{ file.mtime|mtime }} · {{ file.size|size }}</dd>
+      <dt>Outcome</dt><dd>{{ file.outcome }} <span class="muted">({{ file.status }})</span></dd>
+      <dt>Dates</dt><dd>{% if file.date_min %}{{ file.date_min }} → {{ file.date_max }}{% else %}–{% endif %}</dd>
+      <dt>Date reading</dt><dd>{% set order = {'dmy': 'day first (from its own dates)', 'mdy': 'month first (from its own dates)', 'unknown': 'order unknown: ambiguous dates kept both ways', 'mixed': 'mixed day/month orders', 'split': 'day, month, year columns'} %}{{ order.get(file.date_order, 'ISO or spreadsheet dates') }}</dd>
+      <dt>Columns used</dt><dd>{% for field, column in column_map.items() %}<code>{{ column }}</code>{% if field != column %} as {{ field }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
+      {% if file.note %}<dt>Note</dt><dd><span class="warn">{{ file.note }}</span></dd>{% endif %}
+    </dl>
+    {% if file.n_unique %}<p><a class="button" href="/files/{{ file.id }}/ethoscopy.csv">Download matched tubes for ethoscopy</a></p>{% endif %}
+    {% if copies %}
+    <h2>Identical copies</h2>
+    <ul>{% for c in copies %}<li><a class="path" href="/files/{{ c.id }}">{{ c.path }}</a> <span class="muted">{{ c.tag }}</span></li>{% endfor %}</ul>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2 style="margin-top:0">Rows</h2>
+    <table>
+      <tbody>
+        <tr><td>Matched to exactly one run</td><td class="num">{{ file.n_unique|int }}</td></tr>
+        <tr><td>No run starts that day</td><td class="num">{{ file.n_not_found|int }}</td></tr>
+        <tr><td>Region not in the run's ROI_MAP</td><td class="num">{{ file.n_roi_missing|int }}</td></tr>
+        <tr><td>Run unreadable</td><td class="num">{{ file.n_roi_unknown|int }}</td></tr>
+        <tr><td>Day/month order unknown, both readings find runs</td><td class="num">{{ file.n_date_ambiguous|int }}</td></tr>
+        <tr><td>Several candidate runs</td><td class="num">{{ file.n_ambiguous|int }}</td></tr>
+        <tr><td>Missing date, machine or region</td><td class="num">{{ file.n_incomplete|int }}</td></tr>
+        <tr><td><strong>All rows</strong></td><td class="num"><strong>{{ file.n_rows|int }}</strong></td></tr>
+      </tbody>
+    </table>
+    <p class="muted">Columns in the file: {{ columns|join(', ') }}</p>
+  </section>
+</div>
+
+{% if unmatched %}
+<section class="card scroll" style="margin-top:1rem">
+  <h2 style="margin-top:0">Rows not matched to one run{% if unmatched|length >= 500 %} (first 500){% endif %}</h2>
+  <table>
+    <thead><tr><th class="num">Row</th><th>Date</th><th>Time</th><th>Machine</th><th class="num">ROI</th><th>Genotype</th><th>Status</th><th>Why</th></tr></thead>
+    <tbody>
+    {% for r in unmatched %}
+      <tr><td class="num">{{ r.row_idx }}</td><td>{{ r.date or '–' }}{% if r.date_alt %} <span class="muted">or {{ r.date_alt }}</span>{% endif %}</td>
+        <td>{{ r.start_time or '' }}</td><td>{{ r.machine_name or '–' }}</td><td class="num">{{ r.region_id or '–' }}</td>
+        <td>{{ r.genotype or '' }}</td><td>{{ r.status }}</td><td class="muted">{{ r.note or '' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if runs %}
+<section class="card scroll" style="margin-top:1rem">
+  <h2 style="margin-top:0">Runs it claims ({{ runs|length }})</h2>
+  <table>
+    <thead><tr><th>Start</th><th>Machine</th><th>Experimenter</th><th>Category</th><th class="num">Rows</th></tr></thead>
+    <tbody>
+    {% for r in runs %}
+      <tr><td><a href="/runs/{{ r.id }}">{{ (r.start_local or '–')|replace('T', ' ') }}</a></td><td>{{ r.machine_name }}</td><td>{{ r.experimenter or '' }}</td>
+        <td>{{ category(r.category) }}</td><td class="num">{{ r.n_rows|int }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

@@ -36,7 +36,8 @@ meta.export('Joyce_2024_only_dbs.txt')
 meta.export('Joyce_2024_only_dbs.txt', verbose=True)
 ```
 
-The second class is the **metadata_db_server** which runs a web based UI
+The second class is the **metadata_db_server** which runs a web based UI (deprecated: replaced by
+`ethocensus-web`, see below)
 Instructions on to set it up and run it can be found [here](https://www.notion.so/giorgiogilestro/The-Metadata-Database-Server-cafac3d16ca04c0b8d4364e7624d7151).
 
 ## The ethoscope census (v2, in development)
@@ -83,6 +84,27 @@ belongs to. `discover --no-txt` skips `.txt` files. rethomics exports (`machine_
 `report --out-dir` also writes `header_counts.csv` (column names in use, accepted or not) and
 `date_shapes.csv` (date formats, digits shown as 9), which show what the metadata looks like
 without showing any value. Run the tests with `pip install -e ".[test]" && pytest`.
+
+### Configuration, refresh and the web UI
+List the trees the census reads in a TOML file (see `census.example.toml`) and refresh everything
+in one go: scan, discover, ingest, match and `summarise`, which builds the summary tables the
+web UI reads.
+
+```
+ethocensus --census census.sqlite refresh --config census.toml
+ethocensus --census census.sqlite summarise --config census.toml   # after a manual match
+```
+
+The web UI (`pip install -e ".[web]"`) browses runs and metadata files with facets, shows every
+run's tubes and annotations, every file's unmatched rows and why, and exports any selection as
+ethoscopy metadata. It only reads the census.
+
+```
+ETHOCENSUS_DB=/path/to/census.sqlite ethocensus-web        # serves on 127.0.0.1:8095
+```
+
+It expects to sit behind an SSO proxy (oauth2-proxy with OIDC) that sets `X-Forwarded-Email`;
+requests without it are refused. For local development only, set `ETHOCENSUS_REQUIRE_USER=0`.
 
 ## Installation
 Install with pip

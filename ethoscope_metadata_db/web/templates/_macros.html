@@ -1,0 +1,46 @@
+{% macro category(name) -%}
+<span class="pill"><span class="swatch s-{{ series_of(name) }}"></span>{{ name }}</span>
+{%- endmacro %}
+
+{% macro facets(table, facets, selection, path, target) -%}
+<aside class="facets">
+  {% for facet in table.facets %}{% set values = facets[facet.param] %}{% if values %}
+  <div class="facet">
+    <h3>{{ facet.label }}</h3>
+    <ul>
+      {% for v in values %}
+      <li><a href="{{ selection.toggle_url(path, facet.param, v.value) }}" class="{{ 'on' if v.on }}"
+             hx-get="{{ selection.toggle_url(path, facet.param, v.value) }}" hx-target="{{ target }}" hx-push-url="true">
+        <span>{% if facet.param == 'category' %}{{ category(v.value) }}{% else %}{{ v.value }}{% endif %}</span><span class="n">{{ v.n|int }}</span></a></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}{% endfor %}
+</aside>
+{%- endmacro %}
+
+{% macro chips(selection, path, target) -%}
+{% if selection.filters or selection.q %}
+<div class="chips">
+  {% for param, values in selection.filters.items() %}{% for v in values %}
+  <a class="chip" href="{{ selection.toggle_url(path, param, v) }}" hx-get="{{ selection.toggle_url(path, param, v) }}" hx-target="{{ target }}" hx-push-url="true" title="Remove this filter">{{ param }}: {{ v }} ×</a>
+  {% endfor %}{% endfor %}
+  {% if selection.q %}<span class="chip">text: “{{ selection.q }}”</span>{% endif %}
+  <a href="{{ path }}">clear all</a>
+</div>
+{% endif %}
+{%- endmacro %}
+
+{% macro sort_header(label, key, selection, path, target, num=False) -%}
+{% set on = selection.sort == key %}
+{% set next = ('' if on and selection.desc else '-') ~ key %}
+<th class="{{ 'num' if num }}"><a href="{{ selection.url(path, sort=next) }}" hx-get="{{ selection.url(path, sort=next) }}" hx-target="{{ target }}" hx-push-url="true">{{ label }}{% if on %} {{ '↓' if selection.desc else '↑' }}{% endif %}</a></th>
+{%- endmacro %}
+
+{% macro pager(selection, path, total, pages, target) -%}
+<div class="pager">
+  {% if selection.page > 1 %}<a href="{{ selection.url(path, page=selection.page - 1) }}" hx-get="{{ selection.url(path, page=selection.page - 1) }}" hx-target="{{ target }}" hx-push-url="true">← previous</a>{% endif %}
+  <span class="muted">page {{ selection.page }} of {{ pages|int }} · {{ total|int }} total</span>
+  {% if selection.page < pages %}<a href="{{ selection.url(path, page=selection.page + 1) }}" hx-get="{{ selection.url(path, page=selection.page + 1) }}" hx-target="{{ target }}" hx-push-url="true">next →</a>{% endif %}
+</div>
+{%- endmacro %}

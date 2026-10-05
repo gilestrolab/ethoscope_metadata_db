@@ -1,0 +1,52 @@
+{% from "_macros.html" import facets as facet_list, chips, sort_header, pager, category %}
+{% set path = "/runs" %}{% set target = "#results" %}
+<div class="browser">
+  {{ facet_list(table, facets, selection, path, target) }}
+  <div class="results">
+    <div class="toolbar">
+      <form action="{{ path }}" method="get" hx-get="{{ path }}" hx-target="{{ target }}" hx-push-url="true" hx-trigger="submit, keyup changed delay:400ms from:input[name=q]">
+        {% for param, values in selection.filters.items() %}{% for v in values %}<input type="hidden" name="{{ param }}" value="{{ v }}">{% endfor %}{% endfor %}
+        <input type="search" name="q" value="{{ selection.q }}" placeholder="Filter by path, machine, person, location…" aria-label="Filter runs">
+      </form>
+      <strong>{{ total|int }}</strong> runs
+      <a class="button" href="{{ selection.url('/runs/export.csv') }}" title="One row per run">Download runs (CSV)</a>
+      <a class="button" href="{{ selection.url('/runs/ethoscopy.csv') }}" title="Uniquely matched tubes of these runs, ready for ethoscopy's link_meta_index">Download ethoscopy metadata</a>
+    </div>
+    {{ chips(selection, path, target) }}
+    <div class="scroll">
+    <table>
+      <thead><tr>
+        {{ sort_header("Start (lab clock)", "start", selection, path, target) }}
+        {{ sort_header("Machine", "machine", selection, path, target) }}
+        {{ sort_header("Experimenter", "experimenter", selection, path, target) }}
+        <th>Location</th><th>Stack</th><th>Interactor</th>
+        {{ sort_header("Category", "category", selection, path, target) }}
+        {{ sort_header("Rows", "rows", selection, path, target, True) }}
+        {{ sort_header("Files", "sources", selection, path, target, True) }}
+        {{ sort_header("Size", "size", selection, path, target, True) }}
+        {{ sort_header("Length", "length", selection, path, target, True) }}
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="nowrap"><a href="/runs/{{ r.id }}">{{ (r.start_local or '–')|replace('T', ' ') }}</a></td>
+          <td>{{ r.machine_name or '–' }}</td>
+          <td>{{ r.experimenter or '' }}</td>
+          <td>{{ r.location or '' }}</td>
+          <td>{{ r.stack or '' }}</td>
+          <td>{{ r.interactor or '' }}</td>
+          <td>{{ category(r.category) }}</td>
+          <td class="num">{{ r.n_rows|int }}</td>
+          <td class="num">{{ r.n_sources|int }}</td>
+          <td class="num">{{ r.size|size }}</td>
+          <td class="num">{{ r.duration_h|hours }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="11" class="muted">No runs match these filters.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {{ pager(selection, path, total, pages, target) }}
+  </div>
+</div>

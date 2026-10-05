@@ -22,28 +22,18 @@ from . import discover as discover_mod
 from . import match as match_mod
 from . import report as report_mod
 from . import store
+from .config import CensusConfig, ConfigError, load_config, read_path_list
 from .dbindex import scan_results
+from .refresh import refresh
+from .summarise import summarise
 
 
 def _print_counts(title: str, counts: dict[str, int]) -> None:
     print(title + ": " + ", ".join(f"{k}={v}" for k, v in counts.items()))
 
 
-def _read_list(path: str | None) -> list[str] | None:
-    """Paths listed one per line (blank lines and ``#`` comments ignored).
-
-    Bytes that are not UTF-8 (old file names) are kept as the file system
-    gives them, so such files are found and then reported as ``bad_name``.
-    """
-    if path is None:
-        return None
-    with open(path, encoding="utf-8", errors="surrogateescape") as handle:
-        lines = (line.strip() for line in handle)
-        return [line for line in lines if line and not line.startswith("#")]
-
-
 def cmd_scan_dbs(conn, args: argparse.Namespace) -> int:
-    paths = _read_list(args.files_from)
+    paths = read_path_list(args.files_from)
     counts = scan_results(conn, args.results_root, rescan=args.rescan, paths=paths)
     _print_counts("scan-dbs", counts)
     return 0
@@ -55,7 +45,7 @@ def cmd_discover(conn, args: argparse.Namespace) -> int:
         extensions.discard(".txt")
     max_mb = None if args.max_mb <= 0 else args.max_mb
     counts = discover_mod.discover(
-        conn, args.homes_root, extensions, max_mb, args.exclude, _read_list(args.files_from)
+        conn, args.homes_root, extensions, max_mb, args.exclude, read_path_list(args.files_from)
     )
     _print_counts("discover", counts)
     candidates = conn.execute(
@@ -76,6 +66,23 @@ def cmd_ingest(conn, args: argparse.Namespace) -> int:
 
 def cmd_match(conn, args: argparse.Namespace) -> int:
     _print_counts("match", match_mod.match_all(conn, args.time_tolerance, args.timezone))
+    return 0
+
+
+def _config(args: argparse.Namespace):
+    return load_config(args.config) if args.config else CensusConfig()
+
+
+def cmd_summarise(conn, args: argparse.Namespace) -> int:
+    config = _config(args)
+    _print_counts("summarise", summarise(conn, config.tags, config.timezone))
+    return 0
+
+
+def cmd_refresh(conn, args: argparse.Namespace) -> int:
+    refresh(
+        conn, load_config(args.config), progress=lambda step, counts: print(f"{step}: {counts}")
+    )
     return 0
 
 
@@ -165,6 +172,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(func=cmd_match)
 
+    p = sub.add_parser("summarise", help="rebuild the summary tables the web UI reads")
+    p.add_argument("--config", help="census.toml (for metadata location tags and time zone)")
+    p.set_defaults(func=cmd_summarise)
+
+    p = sub.add_parser("refresh", help="scan, discover, ingest, match and summarise from a config")
+    p.add_argument("--config", required=True, help="census.toml listing the roots")
+    p.set_defaults(func=cmd_refresh)
+
     p = sub.add_parser("report", help="summarise the census")
     p.add_argument("--out-dir", help="write CSV tables here")
     p.set_defaults(func=cmd_report)
@@ -192,6 +207,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     try:
         return args.func(conn, args)
+    except (ConfigError, OSError) as exc:
+        print(f"{args.command} failed: {exc}", file=sys.stderr)
+        return 2
     finally:
         conn.close()
 

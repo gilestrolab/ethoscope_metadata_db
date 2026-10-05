@@ -20,8 +20,13 @@ public repository.
 - [ ] genotype/treatment mapping table with suggested groupings for human review; raw kept. Many tubes carry different genotype strings in different files.
 ## Phase 4: first use
 - [ ] controls-only bona-fide sleep noise reference (separate repo/script); "unstimulated" = DefaultStimulator.
-## Web UI (2026-10-05)
-- [ ] Replace the v1 bottle UI: navigable at the current scale, flexible project names / labels / usernames, summaries of claimed and orphan databases by date, user, machine.
+## Web UI (2026-10-05; plan approved by Giorgio)
+Replace the v1 bottle UI: navigable at the current scale, flexible project names / labels / usernames, summaries of claimed and orphan databases by date, user, machine. FastAPI + Jinja2 + htmx, server-side paging; SSO via Keycloak (oauth2-proxy); curation in a separate SQLite file.
+- [x] Phase 1a, census: `summarise` (db_summary, file_summary, genotype_summary; 53 s on turing), WAL, `refresh --config census.toml`
+- [x] Phase 1b, read-only UI: Overview, Runs (+ run page), Files (+ file page), Search, Export; tests; on the real census every page < 100 ms; checked visually (desktop and 390 px)
+- [ ] Keycloak client for oauth2-proxy (Giorgio) before the UI goes beyond localhost
+- [ ] Phase 2, curation: labels/projects (bulk, folder suggestions), people + aliases, notes, audit/undo
+- [ ] Phase 3: check-my-metadata validator + save-as-source; nightly refresh; Docker + oauth2-proxy; deployment
 ## Later
 - [ ] identify picamera2 recordings lacking a camera model in METADATA
 

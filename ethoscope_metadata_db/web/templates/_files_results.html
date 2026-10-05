@@ -1,0 +1,45 @@
+{% from "_macros.html" import facets as facet_list, chips, sort_header, pager %}
+{% set path = "/files" %}{% set target = "#results" %}
+<div class="browser">
+  {{ facet_list(table, facets, selection, path, target) }}
+  <div class="results">
+    <div class="toolbar">
+      <form action="{{ path }}" method="get" hx-get="{{ path }}" hx-target="{{ target }}" hx-push-url="true" hx-trigger="submit, keyup changed delay:400ms from:input[name=q]">
+        {% for param, values in selection.filters.items() %}{% for v in values %}<input type="hidden" name="{{ param }}" value="{{ v }}">{% endfor %}{% endfor %}
+        <input type="search" name="q" value="{{ selection.q }}" placeholder="Filter by path, sheet or home…" aria-label="Filter files">
+      </form>
+      <strong>{{ total|int }}</strong> sheets
+      <a href="/files?all=1&outcome=not+metadata" class="muted">tabular files that are not metadata</a>
+    </div>
+    {{ chips(selection, path, target) }}
+    <div class="scroll">
+    <table>
+      <thead><tr>
+        {{ sort_header("File", "path", selection, path, target) }}
+        <th>Home</th><th>Location</th><th>Outcome</th>
+        {{ sort_header("Rows", "rows", selection, path, target, True) }}
+        {{ sort_header("Matched", "matched", selection, path, target, True) }}
+        {{ sort_header("Not found", "not_found", selection, path, target, True) }}
+        {{ sort_header("Runs", "dbs", selection, path, target, True) }}
+        {{ sort_header("Dates from", "first", selection, path, target) }}
+        {{ sort_header("Modified", "modified", selection, path, target) }}
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td><a class="path" href="/files/{{ r.id }}" title="{{ r.path }}">{{ r.path.rsplit('/', 2)[-2:]|join('/') }}{% if r.sheet %} [{{ r.sheet }}]{% endif %}</a>{% if r.n_copies > 1 %} <span class="muted" title="identical copies elsewhere">×{{ r.n_copies }}</span>{% endif %}</td>
+          <td>{{ r.home or '' }}</td><td>{{ r.tag or '' }}</td><td>{{ r.outcome }}</td>
+          <td class="num">{{ r.n_rows|int }}</td><td class="num">{{ r.n_unique|int }}</td><td class="num">{{ r.n_not_found|int }}</td>
+          <td class="num">{{ r.n_dbs|int }}</td>
+          <td class="nowrap">{% if r.date_min %}{{ r.date_min }}{% if r.date_max != r.date_min %} →<br>{{ r.date_max }}{% endif %}{% endif %}</td>
+          <td class="nowrap">{{ r.mtime|mtime }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="10" class="muted">No metadata files match these filters.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {{ pager(selection, path, total, pages, target) }}
+  </div>
+</div>
