@@ -24,10 +24,12 @@ public repository.
 Replace the v1 bottle UI: navigable at the current scale, flexible project names / labels / usernames, summaries of claimed and orphan databases by date, user, machine. FastAPI + Jinja2 + htmx, server-side paging; SSO via Keycloak (oauth2-proxy); curation in a separate SQLite file.
 - [x] Phase 1a, census: `summarise` (db_summary, file_summary, genotype_summary; 53 s on turing), WAL, `refresh --config census.toml`
 - [x] Phase 1b, read-only UI: Overview, Runs (+ run page), Files (+ file page), Search, Export; tests; on the real census every page < 100 ms; checked visually (desktop and 390 px)
-- [ ] SSO last (Giorgio, 2026-10-05): Keycloak client for oauth2-proxy before the UI goes beyond localhost
+- [x] SSO (2026-10-14): reuses the lab's shared oauth2-proxy/Keycloak at the edge (no new client); the app honours the user header only from the proxy's address (ETHOCENSUS_TRUSTED_PROXIES) and accepts edits from the public host (ETHOCENSUS_PUBLIC_HOSTS)
 - [x] Phase 2, curation: labels/projects (bulk from any selection, folder suggestions), people + aliases (alias-group suggestions incl. first.last <-> flast), notes, audit log with undo; label/person facets; membership rebuilt after edits and census refreshes
 - [x] Simplified presentation (Giorgio, 2026-10-05): secondary columns behind "More columns", secondary filters under "More filters", facet values beyond six under "more", overview breakdowns and run/file detail sections collapsed; empty tube columns hidden
-- [ ] Phase 3: check-my-metadata validator + save-as-source; nightly refresh; Docker + oauth2-proxy; deployment
+- [x] Docker deployment (2026-10-14): Docker/census-web (python 3.12), bound to the proxy-facing address and localhost only
+- [x] Nightly job (2026-10-14): deploy/nightly.sh (systemd user timer census-nightly): census refresh, then backups of curation, census (when changed) and metadata files (ethocensus archive-metadata, content-addressed); optional offsite to Garage; key in an encrypted systemd credential
+- [ ] Phase 3: check-my-metadata validator + save-as-source (v2 has no uploads; v1 /save retired)
 ## Later
 - [ ] identify picamera2 recordings lacking a camera model in METADATA
 
@@ -54,4 +56,4 @@ Replace the v1 bottle UI: navigable at the current scale, flexible project names
 - [ ] behavpy `id`-only tables (stamp + machine id + region) could be matched by machine id; not done.
 - [ ] R objects (.rds/.RData) and inline metadata in scripts/notebooks are not read.
 - [ ] Decision to review: a `time` that matches no run exactly is accepted within 90 min (`start_time_approx`).
-- [ ] Docker/Dockerfile still uses python:3.8; the census needs >= 3.10.
+- [x] Docker/Dockerfile still uses python:3.8 (v1 only); v2 has its own image in Docker/census-web.

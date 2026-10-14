@@ -1,0 +1,31 @@
+# The census web UI behind the lab's SSO proxy (oauth2-proxy + Keycloak).
+# Site values (addresses, host names) live in .env next to this file; see env.example.
+#   docker compose -f Docker/census-web/docker-compose.yml up -d --build
+services:
+  census-web:
+    container_name: ethoscope-census-web
+    build:
+      context: ../..
+      dockerfile: Docker/census-web/Dockerfile
+    image: ethoscope-census-web:latest
+    user: "1000:1000"
+    environment:
+      ETHOCENSUS_DB: /census/census.sqlite
+      ETHOCENSUS_CURATION: /census/curation.sqlite
+      ETHOCENSUS_USER_HEADER: ${ETHOCENSUS_USER_HEADER:-X-Forwarded-Email}
+      ETHOCENSUS_TRUSTED_PROXIES: ${ETHOCENSUS_TRUSTED_PROXIES:?the SSO proxy address(es)}
+      ETHOCENSUS_PUBLIC_HOSTS: ${ETHOCENSUS_PUBLIC_HOSTS:-}
+    volumes:
+      # Read-write: the census is in WAL mode, so even readers need its -shm file.
+      - ${CENSUS_DIR:?folder holding census.sqlite and curation.sqlite}:/census
+    ports:
+      # Only where the SSO proxy connects from, and localhost; never 0.0.0.0, because
+      # the app trusts the user header (and checks the proxy address on top).
+      - "${PROXY_FACING_ADDR:?address the SSO proxy connects to}:8095:8095"
+      - "127.0.0.1:8095:8095"
+    restart: always
+
+networks:
+  default:
+    name: nginx-proxy
+    external: true

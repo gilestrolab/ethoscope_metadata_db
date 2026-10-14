@@ -10,15 +10,23 @@ environment (or a ``.env`` file):
                             proxy (default ``X-Forwarded-Email``)
 ``ETHOCENSUS_REQUIRE_USER`` ``1`` (default): refuse requests without that header.
                             Set ``0`` only for local development.
+``ETHOCENSUS_TRUSTED_PROXIES`` comma-separated addresses or networks of the SSO
+                            proxy; the user header is honoured only on requests
+                            coming from them (default: from anywhere)
+``ETHOCENSUS_PUBLIC_HOSTS`` comma-separated public host names the site is served
+                            under, accepted as the origin of edits besides the
+                            request's own Host
 
 Identity is delegated to oauth2-proxy (OIDC with the lab's Keycloak): the app
-must only be reachable through that proxy, which strips any client-supplied
-copy of the header.
+must only be reachable through that proxy, which overwrites any client-supplied
+copy of the header. ``ETHOCENSUS_TRUSTED_PROXIES`` makes the app itself ignore
+the header from anywhere else.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import ipaddress
 import os
 import sqlite3
 import urllib.parse
@@ -47,6 +55,8 @@ class Settings:
     user_header: str = "X-Forwarded-Email"
     require_user: bool = True
     curation_db: str | None = None
+    trusted_proxies: tuple[str, ...] = ()
+    public_hosts: tuple[str, ...] = ()
 
     @property
     def curation_path(self) -> str:
@@ -68,7 +78,13 @@ class Settings:
             user_header=os.environ.get("ETHOCENSUS_USER_HEADER", "X-Forwarded-Email"),
             require_user=os.environ.get("ETHOCENSUS_REQUIRE_USER", "1") != "0",
             curation_db=os.environ.get("ETHOCENSUS_CURATION"),
+            trusted_proxies=_split(os.environ.get("ETHOCENSUS_TRUSTED_PROXIES", "")),
+            public_hosts=_split(os.environ.get("ETHOCENSUS_PUBLIC_HOSTS", "")),
         )
+
+
+def _split(value: str) -> tuple[str, ...]:
+    return tuple(part.strip() for part in value.split(",") if part.strip())
 
 
 def open_census(path: str) -> sqlite3.Connection:
@@ -89,9 +105,34 @@ def get_db(request: Request) -> Iterator[sqlite3.Connection]:
     conn = open_census(settings.census_db)
     conn.execute("ATTACH DATABASE ? AS cur", (_uri(settings.curation_path),))
     try:
+        keep_membership_fresh(conn, settings)
         yield conn
     finally:
         conn.close()
+
+
+def keep_membership_fresh(conn: sqlite3.Connection, settings: Settings) -> None:
+    """Rebuild label and person membership once the census has been summarised again.
+
+    Membership translates curated paths and names into census ids. The census is
+    refreshed while the app runs (nightly), so each request compares the summary it
+    was built for with the census's; only a mismatch costs a rebuild.
+
+    Args:
+        conn: The census connection with the curation file attached as ``cur``.
+    """
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'db_summary'").fetchone():
+        return  # no census summary yet: nothing to translate
+    built = conn.execute("SELECT value FROM cur.meta WHERE key = 'built_for'").fetchone()
+    if built is not None and built[0] == membership.build_stamp(conn):
+        return
+    census = open_census(settings.census_db)
+    cur = curation_store.connect(settings.curation_path)
+    try:
+        membership.ensure_fresh(census, cur)
+    finally:
+        cur.close()
+        census.close()
 
 
 def get_curation(request: Request) -> Iterator[sqlite3.Connection]:
@@ -121,7 +162,22 @@ def back_to(url: str | None, fallback: str = "/", **message: str) -> RedirectRes
     return RedirectResponse(target, status_code=303)
 
 
+def from_trusted_proxy(request: Request) -> bool:
+    """Whether the request comes from the SSO proxy (always, if no proxy is configured)."""
+    proxies = request.app.state.settings.trusted_proxies
+    if not proxies:
+        return True
+    try:
+        client = ipaddress.ip_address(request.client.host if request.client else "")
+    except ValueError:
+        return False
+    return any(client in ipaddress.ip_network(proxy, strict=False) for proxy in proxies)
+
+
 def current_user(request: Request) -> str | None:
+    """The signed-in user, as the SSO proxy reports it; None if not from the proxy."""
+    if not from_trusted_proxy(request):
+        return None
     return request.headers.get(request.app.state.settings.user_header)
 
 
@@ -134,11 +190,17 @@ def render(request: Request, name: str, **context) -> HTMLResponse:
 
 
 def _same_origin(request: Request) -> bool:
-    """Edits must come from this site's own pages (CSRF guard): Origin or Referer host."""
+    """Edits must come from this site's own pages (CSRF guard): Origin or Referer host.
+
+    Behind a proxy the request's Host may be the upstream address, so the
+    proxy's X-Forwarded-Host and the configured public host names count too.
+    """
     source = request.headers.get("origin") or request.headers.get("referer")
     if not source:
         return False
-    return urllib.parse.urlsplit(source).netloc == request.headers.get("host")
+    ours = {request.headers.get("host"), request.headers.get("x-forwarded-host")}
+    ours.update(request.app.state.settings.public_hosts)
+    return urllib.parse.urlsplit(source).netloc in ours - {None}
 
 
 def _fmt_int(value) -> str:

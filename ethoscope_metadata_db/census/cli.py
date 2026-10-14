@@ -19,6 +19,7 @@ import sys
 from typing import Sequence
 
 from . import discover as discover_mod
+from .archive import archive_metadata
 from . import match as match_mod
 from . import report as report_mod
 from . import store
@@ -83,6 +84,11 @@ def cmd_refresh(conn, args: argparse.Namespace) -> int:
     refresh(
         conn, load_config(args.config), progress=lambda step, counts: print(f"{step}: {counts}")
     )
+    return 0
+
+
+def cmd_archive_metadata(conn, args: argparse.Namespace) -> int:
+    _print_counts("archive-metadata", archive_metadata(conn, args.archive))
     return 0
 
 
@@ -179,6 +185,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("refresh", help="scan, discover, ingest, match and summarise from a config")
     p.add_argument("--config", required=True, help="census.toml listing the roots")
     p.set_defaults(func=cmd_refresh)
+
+    p = sub.add_parser(
+        "archive-metadata",
+        help="copy every accepted metadata file into a content-addressed archive (a backup)",
+    )
+    p.add_argument("archive", help="archive folder (files/ and catalogue.csv; nothing is deleted)")
+    p.set_defaults(func=cmd_archive_metadata)
 
     p = sub.add_parser("report", help="summarise the census")
     p.add_argument("--out-dir", help="write CSV tables here")

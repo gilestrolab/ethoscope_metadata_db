@@ -1,0 +1,18 @@
+# The census site's nightly job (refresh, then backups), as a systemd user service.
+# Install: see deploy/README.md.
+[Unit]
+Description=Census nightly job: refresh the census, then back up curation, census and metadata files
+
+[Service]
+Type=oneshot
+SyslogIdentifier=census-nightly
+TimeoutStartSec=6h
+# Site settings (no secrets): CENSUS_DIR, CENSUS_CONFIG, BACKUP_DIR, ETHOCENSUS,
+# GARAGE_BUCKET, ETHOCENSUS_REPO; see nightly.env.example.
+EnvironmentFile=%h/.config/ethocensus/nightly.env
+# The Garage key, encrypted at rest and decrypted only for this service
+# (created with: systemd-creds --user encrypt --name=garage garage.env <this path>).
+LoadCredentialEncrypted=garage:%h/.config/credstore.encrypted/ethocensus-garage
+ExecStart=/usr/bin/env bash ${ETHOCENSUS_REPO}/deploy/nightly.sh
+Nice=10
+IOSchedulingClass=idle

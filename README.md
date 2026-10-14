@@ -123,6 +123,27 @@ Every page shows all its sections, columns and filters at once; nothing is folde
 
 It expects to sit behind an SSO proxy (oauth2-proxy with OIDC) that sets `X-Forwarded-Email`;
 requests without it are refused. For local development only, set `ETHOCENSUS_REQUIRE_USER=0`.
+Set `ETHOCENSUS_TRUSTED_PROXIES` to the proxy's address so that the header is honoured only from
+it, and `ETHOCENSUS_PUBLIC_HOSTS` to the public host name, which edits must come from.
+
+### Deployment with Docker
+
+`Docker/census-web/` builds and runs the web UI in a container. Copy `env.example` to `.env`
+in that folder and fill in the census folder, the address the SSO proxy connects to and the
+proxy's own address; then, from the repository root:
+
+```
+docker compose -f Docker/census-web/docker-compose.yml up -d --build
+```
+
+The container listens only on that address and on localhost, never on all interfaces, and runs
+as uid 1000. It reads the census and writes only the curation file.
+
+A nightly job (`deploy/nightly.sh`, a systemd user timer) refreshes the census and then
+backs up the curation file, the census database (when it changed) and every accepted metadata
+file, locally and optionally to a Garage (S3) bucket. The curation file is people's work and
+cannot be rebuilt; the metadata archive (`ethocensus archive-metadata`) keeps every version of
+every sheet, so a file later edited or deleted can still be recovered. See `deploy/README.md`.
 
 ## Installation
 Install with pip

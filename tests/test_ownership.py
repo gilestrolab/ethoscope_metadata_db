@@ -11,6 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 from test_curation import ORIGIN, WHO, both, census_path, cur  # noqa: F401 (fixtures)
 
+from ethoscope_metadata_db.census import store as census_store
+from ethoscope_metadata_db.census import summarise
 from ethoscope_metadata_db.web.app import Settings, create_app
 from ethoscope_metadata_db.web.curation import actions, membership, store, suggest, views
 from ethoscope_metadata_db.web.curation.store import CurationError
@@ -154,7 +156,9 @@ class TestPersonDetails:
         team = actions.create_person(cur, WHO, "infection team", kind="shared", active=True)
         active = dict(cur.execute("SELECT id, active FROM person").fetchall())
         assert active == {alumna: 0, current: 1, team: 0}  # a not-a-person is never "in the lab"
-        actions.edit_person(cur, WHO, current, "Rosalind Franklin", "rfranklin", "postdoc", active=False)
+        actions.edit_person(
+            cur, WHO, current, "Rosalind Franklin", "rfranklin", "postdoc", active=False
+        )
         assert cur.execute("SELECT active FROM person WHERE id = ?", (current,)).fetchone()[0] == 0
         store.undo(cur, cur.execute("SELECT max(id) FROM audit").fetchone()[0], WHO)
         assert cur.execute("SELECT active FROM person WHERE id = ?", (current,)).fetchone()[0] == 1
@@ -255,3 +259,37 @@ class TestPeoplePage:
             follow_redirects=False,
         )
         assert "error=" in response.headers["location"]
+
+
+class TestCensusRefreshedUnderTheApp:
+    """The nightly refresh re-summarises the census while the app runs; owners must follow."""
+
+    def test_next_request_rebuilds_ownership(self, census_path):
+        client = TestClient(create_app(Settings(census_path)))
+        client.post(
+            "/people",
+            data={"name": "Alice A", "alias": ["experimenter:alice"], "kind": "person"},
+            headers=ORIGIN,
+        )
+        curation = client.app.state.settings.curation_path
+
+        def owned():
+            conn = store.connect(curation)
+            try:
+                return conn.execute("SELECT count(*) FROM run_person").fetchone()[0]
+            finally:
+                conn.close()
+
+        assert owned() == 4  # the runs typed 'alice' on the node
+        census = census_store.connect(census_path)
+        census.execute("UPDATE db_file SET experimenter = 'alice' WHERE experimenter IS NULL")
+        summarise.summarise(census)
+        # Reason: summarised_at has one-second resolution; make the new summary unmistakable.
+        census.execute(
+            "UPDATE schema_info SET value = '2099-01-01T00:00:00+00:00' WHERE key = 'summarised_at'"
+        )
+        census.commit()
+        census.close()
+        assert owned() == 4  # nothing rebuilt yet: no request since
+        assert client.get("/people", headers=ORIGIN).status_code == 200
+        assert owned() == 6

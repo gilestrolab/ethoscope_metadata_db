@@ -104,8 +104,12 @@ class TestChangesAndUndo:
         p1 = actions.create_person(
             cur, WHO, "Grace Hopper", [("experimenter", "grace.hopper"), ("home", "ghopper")]
         )
-        p2 = actions.create_person(cur, WHO, "G. Hopper", [("home", "ghopper")])  # takes the alias over
-        owner = cur.execute("SELECT person_id FROM person_alias WHERE value = 'ghopper'").fetchone()[0]
+        p2 = actions.create_person(
+            cur, WHO, "G. Hopper", [("home", "ghopper")]
+        )  # takes the alias over
+        owner = cur.execute(
+            "SELECT person_id FROM person_alias WHERE value = 'ghopper'"
+        ).fetchone()[0]
         assert owner == p2
         actions.merge_people(cur, WHO, p2, p1)
         aliases = {
