@@ -26,21 +26,27 @@ if [ -n "${STAMP_SQL:-}" ]; then
         exit 0
     fi
 fi
+# Reason: a copy cut short (job killed, disk full) must never pass for a backup, so it is
+# written as .part and only renamed once checked; leftovers of an earlier run are dropped.
+rm -f "$dest/$prefix"*.part
 name="${prefix}$(date +%Y%m%d_%H%M%S).sqlite"
 out="$dest/$name"
-sqlite3 "$src" ".backup '$out'"
-chmod 600 "$out"
-if [ "$(sqlite3 "$out" 'PRAGMA integrity_check')" != "ok" ]; then
-    echo "backup failed its integrity check: $out" >&2
+sqlite3 "$src" ".backup '$out.part'"
+chmod 600 "$out.part"
+if [ "$(sqlite3 "$out.part" 'PRAGMA integrity_check')" != "ok" ]; then
+    echo "backup failed its integrity check: $out.part" >&2
     exit 1
 fi
 if [ "${COMPRESS:-}" = "zstd" ]; then
-    zstd -q -T0 --rm "$out" -o "$out.zst"
+    zstd -q -T0 "$out.part" -o "$out.zst.part"
+    rm -f "$out.part"
     out="$out.zst"
     name="$name.zst"
 fi
+mv "$out.part" "$out"
 # Reason: only this script's own copies rotate; hand-made backups in the folder are kept.
-ls -1t "$dest/$prefix"* | tail -n +$((keep + 1)) | xargs -r rm --
+ls -1t "$dest/$prefix"*.sqlite "$dest/$prefix"*.sqlite.zst 2>/dev/null | tail -n +$((keep + 1)) |
+    xargs -r rm --
 echo "backed up $src -> $out"
 
 if [ -n "${GARAGE_REMOTE:-}" ]; then

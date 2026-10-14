@@ -15,4 +15,5 @@ EnvironmentFile=%h/.config/ethocensus/nightly.env
 LoadCredentialEncrypted=garage:%h/.config/credstore.encrypted/ethocensus-garage
 ExecStart=/usr/bin/env bash ${ETHOCENSUS_REPO}/deploy/nightly.sh
 Nice=10
-IOSchedulingClass=idle
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
